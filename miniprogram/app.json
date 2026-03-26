@@ -1,0 +1,31 @@
+{
+  "pages": [
+    "pages/overview/overview",
+    "pages/login/login",
+    "pages/entry/entry",
+    "pages/reports/reports",
+    "pages/settings/settings",
+    "pages/shift-detail/shift-detail"
+  ],
+  "tabBar": {
+    "custom": true,
+    "color": "#999999",
+    "selectedColor": "#000000",
+    "backgroundColor": "#ffffff",
+    "list": [
+      { "pagePath": "pages/overview/overview", "text": "概览" },
+      { "pagePath": "pages/entry/entry", "text": "录入" },
+      { "pagePath": "pages/reports/reports", "text": "报表" },
+      { "pagePath": "pages/settings/settings", "text": "设置" }
+    ]
+  },
+  "window": {
+    "navigationBarBackgroundColor": "#f9f9fb",
+    "navigationBarTitleText": "Ledger",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f9f9fb",
+    "backgroundTextStyle": "dark"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

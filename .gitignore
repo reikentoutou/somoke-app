@@ -1,0 +1,23 @@
+# 含密码/密钥的配置文件
+api/config/database.php
+api/config/wechat.php
+
+# 环境变量
+.env
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# 微信小程序
+miniprogram_npm/
+node_modules/
+
+# 日志
+*.log
+
+# 临时打包 / 备份
+*.zip

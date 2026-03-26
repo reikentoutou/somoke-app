@@ -1,0 +1,101 @@
+<view class="shift-detail-page">
+  <!-- Header: title + info card -->
+  <view class="shift-detail-header">
+    <view class="shift-detail-header__main">
+      <text class="label-sm shift-detail-header__eyebrow">SHIFT OVERVIEW</text>
+      <text class="headline-lg shift-detail-header__title">{{shiftName}}</text>
+    </view>
+    <view class="shift-detail-info card">
+      <view class="shift-detail-info__row">
+        <text class="label-sm shift-detail-info__label">记录日期</text>
+        <text class="title-md shift-detail-info__value">{{recordDateDisplay}}</text>
+      </view>
+      <view class="shift-detail-info__recorder">
+        <view class="shift-detail-info__avatar" wx:if="{{recorderInitial}}">
+          <text class="shift-detail-info__avatar-text">{{recorderInitial}}</text>
+        </view>
+        <view class="shift-detail-info__recorder-text">
+          <text class="label-sm shift-detail-info__label">记录人</text>
+          <text class="body-md shift-detail-info__name">{{recorderName}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- Hero: total sold -->
+  <view class="shift-detail-hero">
+    <text class="label-sm shift-detail-hero__label">TOTAL SOLD</text>
+    <view class="shift-detail-hero__amount-row">
+      <text class="display-lg shift-detail-hero__num">{{qtySoldFormatted}}</text>
+      <text class="shift-detail-hero__units">units</text>
+    </view>
+  </view>
+
+  <!-- Metrics -->
+  <view class="shift-detail-metrics">
+    <view class="shift-detail-metric card-low">
+      <text class="label-sm shift-detail-metric__label">上班数量</text>
+      <text class="headline-lg shift-detail-metric__value">{{qtyOpeningFormatted}}</text>
+    </view>
+    <view class="shift-detail-metric card-low">
+      <text class="label-sm shift-detail-metric__label">下班数量</text>
+      <text class="headline-lg shift-detail-metric__value">{{qtyClosingFormatted}}</text>
+    </view>
+    <view class="shift-detail-metric card-low">
+      <text class="label-sm shift-detail-metric__label">赠送量</text>
+      <text class="headline-lg shift-detail-metric__value">{{qtyGiftFormatted}}</text>
+    </view>
+  </view>
+
+  <!-- 支付明细 -->
+  <view class="shift-detail-section">
+    <text class="label-sm shift-detail-section__eyebrow">PAYMENT BREAKDOWN</text>
+    <text class="title-md shift-detail-section__title">支付明细</text>
+    <view class="shift-detail-pay card">
+      <view class="shift-detail-pay__row">
+        <view class="shift-detail-pay__icon shift-detail-pay__icon--wechat" />
+        <view class="shift-detail-pay__mid">
+          <text class="title-md">微信支付</text>
+          <text class="body-md shift-detail-pay__sub">{{soldWechat}} 份卖出</text>
+        </view>
+        <text class="title-md shift-detail-pay__amt">¥{{wechatAmountStr}}</text>
+      </view>
+      <view class="shift-detail-pay__divider" />
+      <view class="shift-detail-pay__row">
+        <view class="shift-detail-pay__icon shift-detail-pay__icon--alipay" />
+        <view class="shift-detail-pay__mid">
+          <text class="title-md">支付宝</text>
+          <text class="body-md shift-detail-pay__sub">{{soldAlipay}} 份卖出</text>
+        </view>
+        <text class="title-md shift-detail-pay__amt">¥{{alipayAmountStr}}</text>
+      </view>
+      <view class="shift-detail-pay__divider" />
+      <view class="shift-detail-pay__row">
+        <view class="shift-detail-pay__icon shift-detail-pay__icon--cash" />
+        <view class="shift-detail-pay__mid">
+          <text class="title-md">现金支付</text>
+          <text class="body-md shift-detail-pay__sub">{{soldCash}} 份卖出</text>
+        </view>
+        <text class="title-md shift-detail-pay__amt">¥{{cashAmountStr}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 现金清算 -->
+  <view class="shift-detail-section shift-detail-section--last">
+    <text class="label-sm shift-detail-section__eyebrow">CASH SETTLEMENT</text>
+    <text class="title-md shift-detail-section__title">现金清算</text>
+    <view class="shift-detail-cash">
+      <view class="shift-detail-cash__cell card-low">
+        <text class="label-sm shift-detail-cash__label">上班现金</text>
+        <text class="headline-lg shift-detail-cash__value">¥{{cashOpeningStr}}</text>
+      </view>
+      <view class="shift-detail-cash__cell shift-detail-cash__cell--elevated card">
+        <text class="label-sm shift-detail-cash__label">下班现金</text>
+        <text class="headline-lg shift-detail-cash__value">¥{{cashClosingStr}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="bottom-spacer" />
+</view>

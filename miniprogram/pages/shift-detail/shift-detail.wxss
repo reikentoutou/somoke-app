@@ -1,0 +1,272 @@
+/* 班次详情 — 编辑风排版；与 app.wxss 设计系统对齐 */
+
+.shift-detail-page {
+  padding-left: 40rpx;
+  padding-right: 40rpx;
+  padding-bottom: 240rpx;
+}
+
+/* ----- Header ----- */
+
+.shift-detail-header {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32rpx;
+  margin-bottom: 48rpx;
+}
+
+.shift-detail-header__main {
+  flex: 1;
+  min-width: 0;
+  padding-top: 8rpx;
+}
+
+.shift-detail-header__eyebrow {
+  display: block;
+  margin-bottom: 16rpx;
+}
+
+.shift-detail-header__title {
+  display: block;
+  word-break: break-all;
+}
+
+.shift-detail-info {
+  flex-shrink: 0;
+  width: 280rpx;
+  padding: 32rpx 36rpx;
+}
+
+.shift-detail-info__row {
+  margin-bottom: 28rpx;
+}
+
+.shift-detail-info__label {
+  display: block;
+  margin-bottom: 8rpx;
+}
+
+.shift-detail-info__value {
+  display: block;
+  font-size: 30rpx;
+  line-height: 1.25;
+}
+
+.shift-detail-info__recorder {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.shift-detail-info__avatar {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  background: #000000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shift-detail-info__avatar-text {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #e2e2e2;
+}
+
+.shift-detail-info__recorder-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.shift-detail-info__name {
+  display: block;
+  margin-top: 4rpx;
+  color: #474747;
+  font-weight: 500;
+}
+
+/* ----- Hero (dark) ----- */
+
+.shift-detail-hero {
+  background: #000000;
+  color: #e2e2e2;
+  border-radius: 48rpx;
+  padding: 48rpx 48rpx 52rpx;
+  margin-bottom: 32rpx;
+}
+
+.shift-detail-hero__label {
+  color: rgba(226, 226, 226, 0.65);
+  display: block;
+  margin-bottom: 24rpx;
+}
+
+.shift-detail-hero__amount-row {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 16rpx 24rpx;
+}
+
+.shift-detail-hero__num {
+  color: #ffffff;
+  font-size: 120rpx;
+  letter-spacing: -4rpx;
+}
+
+.shift-detail-hero__units {
+  font-size: 28rpx;
+  font-weight: 500;
+  letter-spacing: 2rpx;
+  text-transform: uppercase;
+  color: rgba(226, 226, 226, 0.55);
+}
+
+/* ----- Metric grid ----- */
+
+.shift-detail-metrics {
+  display: flex;
+  flex-direction: row;
+  gap: 20rpx;
+  margin-bottom: 56rpx;
+}
+
+.shift-detail-metric {
+  flex: 1;
+  min-width: 0;
+  padding: 36rpx 28rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.shift-detail-metric__label {
+  display: block;
+  font-size: 20rpx;
+  letter-spacing: 2rpx;
+}
+
+.shift-detail-metric__value {
+  font-size: 44rpx;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -1rpx;
+}
+
+/* ----- Sections ----- */
+
+.shift-detail-section {
+  margin-bottom: 48rpx;
+}
+
+.shift-detail-section--last {
+  margin-bottom: 0;
+}
+
+.shift-detail-section__eyebrow {
+  display: block;
+  margin-bottom: 12rpx;
+}
+
+.shift-detail-section__title {
+  display: block;
+  margin-bottom: 28rpx;
+}
+
+/* ----- Payment list ----- */
+
+.shift-detail-pay {
+  padding: 8rpx 48rpx 48rpx;
+}
+
+.shift-detail-pay__row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 36rpx 0;
+  gap: 28rpx;
+}
+
+.shift-detail-pay__icon {
+  width: 24rpx;
+  height: 24rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.shift-detail-pay__icon--wechat {
+  background: #07c160;
+  box-shadow: 0 0 0 12rpx rgba(7, 193, 96, 0.12);
+}
+
+.shift-detail-pay__icon--alipay {
+  background: #1677ff;
+  box-shadow: 0 0 0 12rpx rgba(22, 119, 255, 0.12);
+}
+
+.shift-detail-pay__icon--cash {
+  background: #000000;
+  box-shadow: 0 0 0 12rpx rgba(0, 0, 0, 0.06);
+}
+
+.shift-detail-pay__mid {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.shift-detail-pay__sub {
+  font-size: 24rpx;
+  color: #474747;
+}
+
+.shift-detail-pay__amt {
+  flex-shrink: 0;
+  font-weight: 600;
+  letter-spacing: -0.5rpx;
+}
+
+.shift-detail-pay__divider {
+  height: 2rpx;
+  background: rgba(0, 0, 0, 0.06);
+  margin-left: 52rpx;
+}
+
+/* ----- Cash grid ----- */
+
+.shift-detail-cash {
+  display: flex;
+  flex-direction: row;
+  gap: 20rpx;
+}
+
+.shift-detail-cash__cell {
+  flex: 1;
+  min-width: 0;
+  padding: 40rpx 36rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.shift-detail-cash__cell--elevated {
+  box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.06);
+  border: none;
+}
+
+.shift-detail-cash__label {
+  display: block;
+}
+
+.shift-detail-cash__value {
+  font-size: 40rpx;
+  font-weight: 600;
+  letter-spacing: -1rpx;
+}

@@ -1,0 +1,101 @@
+<view class="page-container settings-shell">
+  <!-- 个人资料 -->
+  <view class="settings-profile card">
+    <view class="settings-profile-main">
+      <view class="settings-avatar">{{avatarLetter}}</view>
+      <view class="settings-profile-text">
+        <text class="title-md settings-profile-name">{{displayName}}</text>
+        <text class="body-md settings-profile-role">{{roleText}}</text>
+      </view>
+    </view>
+    <text class="settings-chevron">›</text>
+  </view>
+
+  <!-- 管理 -->
+  <text class="label-sm settings-group-label">管理</text>
+  <view class="settings-card">
+    <view class="settings-row">
+      <view class="settings-icon-circle">班</view>
+      <text class="body-md settings-row-label">班次设置</text>
+      <text class="body-md settings-row-trailing">3 Shifts Active</text>
+      <text class="settings-chevron muted">›</text>
+    </view>
+    <view class="settings-divider"></view>
+    <view class="settings-row">
+      <view class="settings-icon-circle">团</view>
+      <text class="body-md settings-row-label">团队管理</text>
+      <text class="body-md settings-row-trailing">12 Members</text>
+      <text class="settings-chevron muted">›</text>
+    </view>
+  </view>
+
+  <!-- 运营控制 -->
+  <text class="label-sm settings-group-label">运营控制</text>
+  <view class="settings-card">
+    <view class="settings-row settings-row-tall">
+      <view class="settings-icon-circle">现</view>
+      <view class="settings-col-grow">
+        <text class="body-md settings-row-label">取现设置</text>
+        <view class="settings-withdraw-row">
+          <text class="body-md settings-sub">已取现金额 ¥{{storeInfo.withdrawnFormatted}}</text>
+          <text class="settings-edit-glyph">改</text>
+        </view>
+      </view>
+      <text class="settings-chevron muted">›</text>
+    </view>
+    <view class="settings-divider"></view>
+    <view class="settings-row settings-row-stack">
+      <view class="settings-row settings-row-nested">
+        <view class="settings-icon-circle">库</view>
+        <view class="settings-col-grow">
+          <text class="body-md settings-row-label">库存管理</text>
+          <text class="body-md settings-sub">当前: {{storeInfo.stock}} 件</text>
+        </view>
+      </view>
+      <view class="settings-restock">
+        <input
+          class="settings-restock-input body-md"
+          type="number"
+          placeholder="数量"
+          value="{{restockQty}}"
+          bindinput="onRestockInput"
+        />
+        <button class="settings-restock-btn" size="mini" bindtap="doRestock">补货</button>
+      </view>
+    </view>
+  </view>
+
+  <!-- 偏好 -->
+  <text class="label-sm settings-group-label">偏好</text>
+  <view class="settings-card">
+    <view class="settings-row">
+      <view class="settings-icon-circle">币</view>
+      <text class="body-md settings-row-label">货币与单位</text>
+      <text class="body-md settings-row-trailing">CNY (¥), Metric</text>
+      <text class="settings-chevron muted">›</text>
+    </view>
+    <view class="settings-divider"></view>
+    <view class="settings-row">
+      <view class="settings-icon-circle">出</view>
+      <text class="body-md settings-row-label">导出数据</text>
+      <text class="body-md settings-row-trailing">Excel / PDF</text>
+      <text class="settings-chevron muted">›</text>
+    </view>
+  </view>
+
+  <!-- 系统 -->
+  <text class="label-sm settings-group-label">系统</text>
+  <view class="settings-card">
+    <view class="settings-row">
+      <view class="settings-icon-circle">安</view>
+      <text class="body-md settings-row-label">安全与隐私</text>
+      <text class="settings-chevron muted">›</text>
+    </view>
+  </view>
+
+  <button class="settings-logout body-md" bindtap="logout">退出登录</button>
+
+  <text class="body-md settings-version">Ledger v2.4.0</text>
+
+  <view class="bottom-spacer"></view>
+</view>

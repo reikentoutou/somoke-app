@@ -1,0 +1,119 @@
+<view class="page-container">
+
+  <!-- Editorial Headline -->
+  <view class="headline-section">
+    <text class="label-sm">新增条目</text>
+    <text class="headline-lg">新增记账数据</text>
+  </view>
+
+  <!-- Date & Shift Picker Row -->
+  <view class="picker-row">
+    <view class="card picker-card">
+      <text class="label-sm">日期</text>
+      <picker mode="date" value="{{recordDate}}" bindchange="onDateChange">
+        <text class="picker-value">{{recordDate || '请选择'}}</text>
+      </picker>
+    </view>
+    <view class="card picker-card">
+      <text class="label-sm">所属班次</text>
+      <picker range="{{shiftConfigs}}" range-key="name" value="{{selectedShiftIndex}}" bindchange="onShiftChange">
+        <text class="picker-value">{{shiftConfigs[selectedShiftIndex].name || '请选择'}}</text>
+      </picker>
+    </view>
+  </view>
+
+  <!-- Recorder Name (read-only, from login) -->
+  <view class="name-section">
+    <text class="label-sm">记账姓名</text>
+    <text class="name-display">{{recorderName || '请先登录'}}</text>
+  </view>
+
+  <!-- Shift Quantities: Big Display -->
+  <view class="card-low qty-card">
+    <view class="qty-row">
+      <view class="qty-col">
+        <text class="label-sm qty-label">上班数量</text>
+        <input class="qty-input" type="number" placeholder="0"
+               value="{{qtyOpening}}" data-field="qtyOpening" bindinput="onInput" />
+      </view>
+      <view class="qty-divider"></view>
+      <view class="qty-col right">
+        <text class="label-sm qty-label right">下班数量</text>
+        <input class="qty-input right" type="number" placeholder="0"
+               value="{{qtyClosing}}" data-field="qtyClosing" bindinput="onInput" />
+      </view>
+    </view>
+  </view>
+
+  <!-- Payment Methods -->
+  <view class="payment-section">
+    <text class="title-md">支付方式统计</text>
+
+    <view class="card pay-item">
+      <view class="pay-left">
+        <view class="pay-icon wechat"><text>微</text></view>
+        <text class="pay-name">微信卖出数量</text>
+      </view>
+      <input class="pay-input" type="number" placeholder="0"
+             value="{{soldWechat}}" data-field="soldWechat" bindinput="onInput" />
+    </view>
+
+    <view class="card pay-item">
+      <view class="pay-left">
+        <view class="pay-icon alipay"><text>支</text></view>
+        <text class="pay-name">支付宝卖出数量</text>
+      </view>
+      <input class="pay-input" type="number" placeholder="0"
+             value="{{soldAlipay}}" data-field="soldAlipay" bindinput="onInput" />
+    </view>
+
+    <view class="card pay-item">
+      <view class="pay-left">
+        <view class="pay-icon cash"><text>现</text></view>
+        <text class="pay-name">现金卖出数量</text>
+      </view>
+      <input class="pay-input" type="number" placeholder="0"
+             value="{{soldCash}}" data-field="soldCash" bindinput="onInput" />
+    </view>
+
+    <view class="card pay-item gift">
+      <view class="pay-left">
+        <view class="pay-icon gift-icon"><text>赠</text></view>
+        <text class="pay-name err">赠送量</text>
+      </view>
+      <input class="pay-input err" type="number" placeholder="0"
+             value="{{qtyGift}}" data-field="qtyGift" bindinput="onInput" />
+    </view>
+  </view>
+
+  <!-- Summary Card (Dark) -->
+  <view class="summary-card">
+    <text class="summary-label">结果预估报告</text>
+
+    <view class="summary-main">
+      <text class="summary-hint">总卖出数量</text>
+      <text class="summary-big">{{qtySold}}</text>
+    </view>
+
+    <view class="summary-grid">
+      <view class="summary-col">
+        <text class="summary-sub-label">上班现金</text>
+        <input class="summary-input" type="digit" placeholder="¥ 0.00"
+               value="{{cashOpening}}" data-field="cashOpening" bindinput="onInput" />
+      </view>
+      <view class="summary-col right">
+        <text class="summary-sub-label">下班现金</text>
+        <input class="summary-input right" type="digit" placeholder="¥ 0.00"
+               value="{{cashClosing}}" data-field="cashClosing" bindinput="onInput" />
+      </view>
+    </view>
+  </view>
+
+  <!-- Submit Button -->
+  <view class="submit-btn {{submitting ? 'disabled' : ''}}" bindtap="submitRecord">
+    <text>确认提交数据</text>
+    <text class="arrow">→</text>
+  </view>
+
+  <view class="bottom-spacer"></view>
+</view>

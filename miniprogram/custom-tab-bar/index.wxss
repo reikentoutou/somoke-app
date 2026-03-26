@@ -1,0 +1,159 @@
+.tab-bar {
+  display: flex;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 120rpx;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: blur(40rpx);
+  backdrop-filter: blur(40rpx);
+  border-radius: 48rpx 48rpx 0 0;
+  box-shadow: 0 -8rpx 60rpx rgba(0, 0, 0, 0.04);
+  z-index: 999;
+}
+
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #c6c6c6;
+  transition: all 0.3s ease;
+}
+
+.tab-item.active {
+  color: #000000;
+}
+
+/* ===== Icon Container ===== */
+
+.tab-icon {
+  width: 44rpx;
+  height: 44rpx;
+  margin-bottom: 4rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ===== Grid Icon (概览) ===== */
+
+.i-grid {
+  width: 36rpx;
+  height: 36rpx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4rpx;
+}
+
+.i-grid .g {
+  width: 15rpx;
+  height: 15rpx;
+  border-radius: 4rpx;
+  background: currentColor;
+}
+
+.active .i-grid .g {
+  border-radius: 5rpx;
+}
+
+/* ===== Plus Circle Icon (录入) ===== */
+
+.i-circle {
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+  border: 3rpx solid currentColor;
+  position: relative;
+}
+
+.cross-h, .cross-v {
+  position: absolute;
+  background: currentColor;
+}
+
+.cross-h {
+  width: 16rpx;
+  height: 3rpx;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.cross-v {
+  width: 3rpx;
+  height: 16rpx;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.active .i-circle {
+  background: #000000;
+  border-color: #000000;
+}
+
+.active .cross-h, .active .cross-v {
+  background: #ffffff;
+}
+
+/* ===== Bar Chart Icon (报表) ===== */
+
+.i-bars {
+  width: 32rpx;
+  height: 32rpx;
+  display: flex;
+  align-items: flex-end;
+  gap: 4rpx;
+}
+
+.i-bars .b {
+  flex: 1;
+  background: currentColor;
+  border-radius: 3rpx 3rpx 0 0;
+  min-height: 6rpx;
+}
+
+/* ===== Sliders Icon (设置) ===== */
+
+.i-sliders {
+  width: 34rpx;
+  height: 30rpx;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.i-sliders .sl {
+  width: 100%;
+  height: 3rpx;
+  background: currentColor;
+  border-radius: 2rpx;
+  position: relative;
+}
+
+.i-sliders .dot {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8rpx;
+  height: 8rpx;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3rpx #ffffff;
+}
+
+.active .i-sliders .dot {
+  box-shadow: 0 0 0 3rpx rgba(255, 255, 255, 0.92);
+}
+
+/* ===== Label ===== */
+
+.tab-label {
+  font-size: 20rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+}
