@@ -1,5 +1,7 @@
 # Somoke Ledger（店铺班次销售记账）
 
+**GitHub：** [https://github.com/reikentoutou/somoke-app](https://github.com/reikentoutou/somoke-app)
+
 微信小程序 + PHP（PDO）+ MySQL，用于按**班次**录入与统计门店销售（微信 / 支付宝 / 现金等），支持微信登录与 Token 鉴权。
 
 ## 技术栈
