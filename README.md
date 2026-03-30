@@ -12,6 +12,11 @@
 | 后端 | PHP 7.x+，PDO，JSON API |
 | 数据库 | MySQL 8.x / 5.7（InnoDB，utf8mb4） |
 
+## 多会话协作（Cursor）
+
+- **开局 Prompt（三会话可复制）：** [docs/AGENT_PROMPTS.md](docs/AGENT_PROMPTS.md)  
+- **按目录自动附带的规则：** `.cursor/rules/somoke-database.mdc`、`somoke-api.mdc`、`somoke-miniprogram.mdc`
+
 ## 仓库结构
 
 ```

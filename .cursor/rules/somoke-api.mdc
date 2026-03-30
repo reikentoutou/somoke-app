@@ -1,0 +1,15 @@
+---
+description: PHP API（PDO、鉴权、JSON 响应）约定
+globs: api/**/*
+alwaysApply: false
+---
+
+# API 会话规则（Somoke Ledger）
+
+- **范围**：只改 `api/`（含 `core/`）。不要改 `database/`、`miniprogram/`。
+- **密钥**：不要创建或提交 `api/config/database.php`、`api/config/wechat.php`；只可维护 `*.example.php` 中的占位与注释。
+- **数据库**：仅用 `getDB()` + **PDO 预处理**；禁止拼接用户输入进 SQL。
+- **响应**：统一 `jsonSuccess` / `jsonError`（`api/core/response.php`）；`Content-Type: application/json; charset=utf-8`。
+- **鉴权**：需登录接口使用 `requireAuth()`；客户端传 `Authorization: Bearer <token>`。
+- **兼容**：目标 PHP 7.x+；避免 `str_starts_with` 等 PHP 8 专有 API；对外部请求（如微信）用 cURL 并做好超时与错误信息返回，避免裸 `display_errors` 进生产（调试完应关闭）。
+- **表结构**：需要新表/新列时，在回复中给出 migration 建议或交由 DB 会话，避免只改文档不落 SQL 文件。
