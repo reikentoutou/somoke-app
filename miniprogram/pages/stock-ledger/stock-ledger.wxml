@@ -1,0 +1,19 @@
+<view class="page-container sub-page stock-ledger-page">
+  <text class="body-md stock-ledger-hint">以下为本功能启用之后写入的变动；历史库存无回溯记录。</text>
+
+  <view wx:if="{{loading}}" class="body-md state-line">加载中…</view>
+  <view wx:elif="{{errMsg}}" class="body-md state-line state-err">{{errMsg}}</view>
+  <block wx:else>
+    <view wx:if="{{!(items && items.length)}}" class="body-md state-line">暂无流水</view>
+    <view wx:for="{{items}}" wx:key="id" class="card stock-ledger-card">
+      <view class="stock-ledger-card__top">
+        <text class="title-md">{{item.type_label}}</text>
+        <text class="body-md stock-ledger-delta">{{item.delta_display}}</text>
+      </view>
+      <text class="body-md stock-ledger-meta">结余 {{item.balance_after}} 件 · {{item.time_display || '—'}}</text>
+      <text wx:if="{{item.note}}" class="body-md stock-ledger-note">{{item.note}}</text>
+      <text wx:if="{{item.ref_line}}" class="label-sm stock-ledger-ref">{{item.ref_line}}</text>
+    </view>
+  </block>
+  <view class="bottom-spacer"></view>
+</view>

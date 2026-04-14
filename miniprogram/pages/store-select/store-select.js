@@ -16,7 +16,7 @@ function decorateStores(raw, u) {
       name: nm,
       role: s.role,
       displayName: dn,
-      roleLabel: s.role === 1 ? '老板' : '员工',
+      roleLabel: s.role === 1 ? '管理员' : '员工',
       isCurrent: sid === cur,
       avatarLetter: /[a-z]/i.test(ch) ? ch.toUpperCase() : ch
     };

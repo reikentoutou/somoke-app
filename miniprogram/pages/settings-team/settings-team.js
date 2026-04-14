@@ -136,7 +136,7 @@ Page({
   onSetBoss(e) {
     var uid = parseInt(e.currentTarget.dataset.userId, 10);
     if (!uid) return;
-    this._setRole(uid, 1, '将该成员设为老板？');
+    this._setRole(uid, 1, '将该成员设为管理员？');
   },
 
   onSetStaff(e) {

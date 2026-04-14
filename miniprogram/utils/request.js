@@ -28,7 +28,9 @@ var ACTION_MAP = {
   '/store_restock.php': 'storeRestock',
   '/withdraw_list.php': 'withdrawList',
   '/withdraw_add.php': 'withdrawAdd',
-  '/profile_update.php': 'updateProfile'
+  '/profile_update.php': 'updateProfile',
+  '/stock_ledger_list.php': 'stockLedgerList',
+  '/stock_adjust.php': 'stockAdjust'
 };
 
 function isTimeoutLikeErr(err) {

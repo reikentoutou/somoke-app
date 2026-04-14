@@ -22,7 +22,7 @@
           hover-class="member-action-hover"
           data-user-id="{{item.user_id}}"
           bindtap="onSetBoss"
-        >设为老板</text>
+        >设为管理员</text>
         <text
           wx:if="{{item.role === 1 && item.user_id !== myUserId && bossCount > 1}}"
           class="member-action"

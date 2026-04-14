@@ -1,0 +1,48 @@
+@import '../settings-recorders/settings-recorders.wxss';
+
+.stock-ledger-page {
+  padding-top: 8rpx;
+}
+
+.stock-ledger-hint {
+  display: block;
+  color: #5e5e63;
+  margin-bottom: 32rpx;
+  line-height: 1.45;
+}
+
+.stock-ledger-card {
+  margin-bottom: 24rpx;
+  padding: 32rpx 36rpx;
+}
+
+.stock-ledger-card__top {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.stock-ledger-delta {
+  font-weight: 600;
+  color: #000000;
+}
+
+.stock-ledger-meta {
+  display: block;
+  color: #474747;
+  margin-bottom: 8rpx;
+}
+
+.stock-ledger-note {
+  display: block;
+  color: #474747;
+  margin-top: 8rpx;
+}
+
+.stock-ledger-ref {
+  display: block;
+  margin-top: 8rpx;
+  color: #888888;
+}

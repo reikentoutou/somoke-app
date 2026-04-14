@@ -1,0 +1,30 @@
+<view class="page-container sub-page stock-adjust-page">
+  <text class="body-md stock-adjust-hint">将下方「实盘库存」填为当前仓库实际件数，保存后系统库存会与此一致，并记一条流水（与补货、记账区分）。</text>
+
+  <view wx:if="{{stockLoading}}" class="body-md state-line">加载当前库存…</view>
+
+  <view wx:elif="{{loadError}}" class="body-md state-line state-err">{{loadError}}</view>
+
+  <block wx:else>
+    <view class="card stock-adjust-card">
+      <text class="label-sm">系统当前库存</text>
+      <text class="headline-lg stock-adjust-current">{{currentStock}} 件</text>
+    </view>
+
+    <view class="card stock-adjust-card">
+      <text class="label-sm">实盘库存（件）</text>
+      <input class="stock-adjust-input body-md" type="number" placeholder="请输入整数" value="{{targetStock}}" bindinput="onTargetInput" />
+    </view>
+
+    <view class="card stock-adjust-card">
+      <text class="label-sm">备注（可选，最多 200 字）</text>
+      <textarea class="stock-adjust-textarea body-md" maxlength="200" placeholder="如：月末盘点调整" value="{{note}}" bindinput="onNoteInput" />
+    </view>
+
+    <view class="stock-adjust-submit {{submitting ? 'disabled' : ''}}" bindtap="onSubmit">
+      <text class="body-md">保存校准</text>
+    </view>
+  </block>
+
+  <view class="bottom-spacer"></view>
+</view>

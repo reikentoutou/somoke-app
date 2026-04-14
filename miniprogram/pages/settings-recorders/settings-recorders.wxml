@@ -2,7 +2,7 @@
   <view wx:if="{{loading}}" class="body-md state-line">加载中…</view>
   <view wx:elif="{{errMsg}}" class="body-md state-line state-err">{{errMsg}}</view>
   <block wx:else>
-    <text class="body-md rec-hint">录入页将从下列姓名中选择记账人；老板可添加或删除（最多 50 个）。</text>
+    <text class="body-md rec-hint">录入页将从下列姓名中选择记账人；管理员可添加或删除（最多 50 个）。</text>
 
     <view wx:for="{{names}}" wx:key="*this" class="card rec-row">
       <text class="title-md rec-name">{{item}}</text>
@@ -16,7 +16,7 @@
       <view class="rec-add-btn" hover-class="rec-add-btn-hover" bindtap="onAddName">添加</view>
     </view>
 
-    <text wx:if="{{!canEdit}}" class="body-md footnote">仅门店老板可维护名单。</text>
+    <text wx:if="{{!canEdit}}" class="body-md footnote">仅门店管理员可维护名单。</text>
   </block>
   <view class="bottom-spacer"></view>
 </view>

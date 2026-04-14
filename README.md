@@ -36,7 +36,7 @@ somoke-app/
 
 - **登录 / 多门店**：`needs_onboarding`、`needs_store_selection` 与 `utils/store.js` 会话逻辑一致。
 - **录入与改账**：Tab「录入」支持新增与修改；**班次详情页**内可「修改本条记录」并调用 `updateRecord`（无需再跳 Tab 录入）。
-- **库存**：`stores.current_stock`；记账提交按规则扣减；**修改记录**时服务端按旧/新扣减差额回算；老板在设置中 **补货**（`storeRestock`）。
+- **库存**：`stores.current_stock`；记账提交按规则扣减；**修改记录**时服务端按旧/新扣减差额回算；管理员在设置中 **补货**（`storeRestock`）。**库存流水**（全员在设置中查看）与**库存校准**（管理员将系统库存对齐实盘）见设置 → 运营控制 → 库存管理区域。
 - **营业额**：与云函数内单价常量一致（当前为 **3000 円/件** × 微信+支付宝+现金件数）；详见 [docs/API_CLOUD.md](docs/API_CLOUD.md)。
 
 ## 快速开始

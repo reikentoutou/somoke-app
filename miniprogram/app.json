@@ -13,7 +13,9 @@
     "pages/settings-shifts/settings-shifts",
     "pages/settings-recorders/settings-recorders",
     "pages/settings-team/settings-team",
-    "pages/shift-detail/shift-detail"
+    "pages/shift-detail/shift-detail",
+    "pages/stock-ledger/stock-ledger",
+    "pages/stock-adjust/stock-adjust"
   ],
   "tabBar": {
     "custom": true,

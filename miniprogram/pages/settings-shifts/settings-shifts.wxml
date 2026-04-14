@@ -23,7 +23,7 @@
       <text class="shift-add-text">新增班次</text>
     </view>
 
-    <text wx:if="{{!canEdit}}" class="body-md footnote">仅门店老板可新增或修改班次。</text>
+    <text wx:if="{{!canEdit}}" class="body-md footnote">仅门店管理员可新增或修改班次。</text>
   </block>
 
   <view wx:if="{{editorVisible}}" class="shift-editor-mask" bindtap="closeEditor">

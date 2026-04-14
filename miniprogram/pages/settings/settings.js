@@ -31,7 +31,11 @@ Page({
     withdrawHistoryVisible: false,
     withdrawHistoryLines: [],
     /** 供 wxml 遍历，永不为 null，避免 render layer Symbol.iterator 报错 */
-    withdrawHistoryLinesSafe: []
+    withdrawHistoryLinesSafe: [],
+    /** 取现弹层顶部：P2 对账说明与聚合数据 */
+    withdrawPanelSummary: [],
+    /** 列表上的一行对账提要（来自 withdrawList，无需点开弹层） */
+    withdrawReconcileShort: ''
   },
 
   goProfileEdit() {
@@ -59,12 +63,12 @@ Page({
     const name = (u && u.nickname) ? u.nickname : '未设置昵称';
     const stores = storeUtil.normalizeStores(u || {});
     const r = storeUtil.getRoleInCurrentStore(u);
-    const roleText = r === 1 ? '老板' : r === 2 ? '员工' : '—';
+    const roleText = r === 1 ? '管理员' : r === 2 ? '员工' : '—';
     const storeName = storeUtil.currentStoreDisplayName(u);
     const sid = storeUtil.getStoreIdFromUserInfo(u || {});
     let currentStoreLine = '—';
     if (storeName) {
-      currentStoreLine = storeName + ' · ' + (r === 1 ? '老板' : r === 2 ? '员工' : '');
+      currentStoreLine = storeName + ' · ' + (r === 1 ? '管理员' : r === 2 ? '员工' : '');
     } else if (sid > 0) {
       currentStoreLine = '门店 #' + sid;
     }
@@ -91,7 +95,8 @@ Page({
         recorderNamesSummary: '—',
         teamSummaryLine: '—',
         'storeInfo.stock': 0,
-        'storeInfo.withdrawnFormatted': '—'
+        'storeInfo.withdrawnFormatted': '—',
+        withdrawReconcileShort: ''
       });
       return;
     }
@@ -120,7 +125,8 @@ Page({
           recorderNamesSummary: rcount + ' 个',
           teamSummaryLine: mc + ' 人',
           'storeInfo.stock': stock,
-          'storeInfo.withdrawnFormatted': util.formatJpy(totalJpy) + ' 円'
+          'storeInfo.withdrawnFormatted': util.formatJpy(totalJpy) + ' 円',
+          withdrawReconcileShort: self.buildWithdrawReconcileShort(wd)
         });
       })
       .catch(function () {
@@ -145,6 +151,73 @@ Page({
   },
 
   noopWithdraw() {},
+
+  /** 设置列表「取现设置」下的单行提要，便于老板一眼对账 */
+  buildWithdrawReconcileShort(wd) {
+    if (!wd || typeof wd !== 'object') return '';
+    if (!wd.latest_shift_record_date) {
+      return '对账提要：尚无班次记账，无法按锚点汇总；请结合钱箱与记账核对';
+    }
+    var cc = wd.latest_cash_closing;
+    var ccNum = cc != null ? parseFloat(cc) : NaN;
+    var ccStr = !Number.isNaN(ccNum) ? util.formatMoney(ccNum) : '—';
+    var afterStr =
+      wd.withdraw_sum_after_anchor_jpy != null
+        ? util.formatJpy(wd.withdraw_sum_after_anchor_jpy) + '円'
+        : '—';
+    return (
+      '对账提要：最近班 ' +
+      String(wd.latest_shift_record_date) +
+      ' 下班现金 ¥' +
+      ccStr +
+      '；锚点之后取现 ' +
+      afterStr
+    );
+  },
+
+  copyWithdrawReconcile() {
+    var lines = this.data.withdrawPanelSummary || [];
+    if (!lines.length) {
+      wx.showToast({ title: '暂无可复制内容', icon: 'none' });
+      return;
+    }
+    var detailLines = (this.data.withdrawHistoryLinesSafe || []).filter(function (x) {
+      return x !== '暂无取现记录';
+    });
+    var text = lines.join('\n');
+    if (detailLines.length) {
+      text += '\n\n—— 明细 ——\n' + detailLines.join('\n');
+    }
+    wx.setClipboardData({
+      data: text,
+      success: function () {
+        wx.showToast({ title: '已复制', icon: 'success' });
+      }
+    });
+  },
+
+  formatWithdrawPanelSummary(data) {
+    var lines = [];
+    if (!data || typeof data !== 'object') return lines;
+    if (data.reconcile_hint) {
+      lines.push(String(data.reconcile_hint));
+    }
+    if (data.latest_shift_record_date) {
+      var cc = data.latest_cash_closing;
+      var ccNum = cc != null ? parseFloat(cc) : NaN;
+      var ccStr = !Number.isNaN(ccNum) ? util.formatMoney(ccNum) : '—';
+      lines.push('最近班次日期：' + String(data.latest_shift_record_date));
+      lines.push('该条下班现金（登记）：¥' + ccStr);
+      if (data.anchor_time_display) {
+        lines.push('对账时间锚点：' + String(data.anchor_time_display));
+      }
+    }
+    if (data.withdraw_sum_after_anchor_jpy != null) {
+      lines.push('锚点之后取现合计：' + util.formatJpy(data.withdraw_sum_after_anchor_jpy) + ' 円');
+    }
+    lines.push('全部取现累计：' + util.formatJpy(data.total_jpy != null ? data.total_jpy : 0) + ' 円');
+    return lines;
+  },
 
   formatWithdrawLine(r) {
     var d = (r.record_date || '').trim();
@@ -177,10 +250,13 @@ Page({
         if (!lines.length) {
           lines = ['暂无取现记录'];
         }
+        var summary = self.formatWithdrawPanelSummary(data);
         self.setData({
           withdrawHistoryVisible: true,
           withdrawHistoryLines: lines,
-          withdrawHistoryLinesSafe: lines
+          withdrawHistoryLinesSafe: lines,
+          withdrawPanelSummary: summary,
+          withdrawReconcileShort: self.buildWithdrawReconcileShort(data)
         });
       })
       .catch(function () {
@@ -200,7 +276,8 @@ Page({
     this.setData({
       withdrawHistoryVisible: false,
       withdrawHistoryLines: [],
-      withdrawHistoryLinesSafe: []
+      withdrawHistoryLinesSafe: [],
+      withdrawPanelSummary: []
     });
   },
 
@@ -212,7 +289,7 @@ Page({
     var self = this;
     var u = app.globalData.userInfo || wx.getStorageSync('userInfo');
     if (!storeUtil.isBossInCurrentStore(u)) {
-      wx.showToast({ title: '仅老板可登记', icon: 'none' });
+      wx.showToast({ title: '仅管理员可登记', icon: 'none' });
       return;
     }
     var amt = parseInt(self.data.withdrawQty, 10);
@@ -250,9 +327,17 @@ Page({
     wx.showModal({
       title: '库存管理',
       content:
-        '老板在「补货」里增加库存；每次录入提交后，会按盘点售出与微信、支付宝、现金售出中较多的数量，再加上赠送数量扣减库存。若只填了盘点、没填支付渠道，也会按规则扣减（库存不会小于 0）。',
+        '管理员在「补货」里增加库存；每次录入提交后，会按盘点售出与微信、支付宝、现金售出中较多的数量，再加上赠送数量扣减库存。若只填了盘点、没填支付渠道，也会按规则扣减（库存不会小于 0）。「库存流水」可查看自本功能上线后的变动记录；「库存校准」可将系统库存对齐实盘数量。',
       showCancel: false
     });
+  },
+
+  goStockLedger() {
+    wx.navigateTo({ url: '/pages/stock-ledger/stock-ledger' });
+  },
+
+  goStockAdjust() {
+    wx.navigateTo({ url: '/pages/stock-adjust/stock-adjust' });
   },
 
   onGenerateInvite() {
@@ -297,7 +382,7 @@ Page({
     var self = this;
     var u = app.globalData.userInfo || wx.getStorageSync('userInfo');
     if (!storeUtil.isBossInCurrentStore(u)) {
-      wx.showToast({ title: '仅老板可补货', icon: 'none' });
+      wx.showToast({ title: '仅管理员可补货', icon: 'none' });
       return;
     }
     var qty = parseInt(self.data.restockQty, 10);

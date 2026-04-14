@@ -1,0 +1,57 @@
+@import '../settings-recorders/settings-recorders.wxss';
+
+.stock-adjust-page {
+  padding-top: 8rpx;
+}
+
+.stock-adjust-hint {
+  display: block;
+  color: #5e5e63;
+  margin-bottom: 32rpx;
+  line-height: 1.45;
+}
+
+.stock-adjust-card {
+  padding: 36rpx 40rpx;
+  margin-bottom: 24rpx;
+}
+
+.stock-adjust-card .label-sm {
+  display: block;
+  margin-bottom: 16rpx;
+}
+
+.stock-adjust-current {
+  display: block;
+  margin-top: 8rpx;
+}
+
+.stock-adjust-input {
+  width: 100%;
+  padding: 16rpx 0;
+  border-bottom: 2rpx solid #e8e8ea;
+}
+
+.stock-adjust-textarea {
+  width: 100%;
+  min-height: 160rpx;
+  margin-top: 12rpx;
+  padding: 16rpx;
+  box-sizing: border-box;
+  background: #f9f9fb;
+  border-radius: 12rpx;
+}
+
+.stock-adjust-submit {
+  margin-top: 48rpx;
+  padding: 28rpx 32rpx;
+  border-radius: 16rpx;
+  background: #000000;
+  color: #ffffff;
+  text-align: center;
+  font-weight: 500;
+}
+
+.stock-adjust-submit.disabled {
+  opacity: 0.5;
+}

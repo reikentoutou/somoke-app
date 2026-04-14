@@ -70,7 +70,7 @@ function getStoreIdFromUserInfo(u) {
 }
 
 /**
- * 当前店内角色：1 老板 2 员工；来自 stores 列表，非 users.role
+ * 当前店内角色：1 管理员 2 员工；来自 stores 列表，非 users.role
  */
 function getRoleInCurrentStore(u) {
   var sid = getStoreIdFromUserInfo(u);
