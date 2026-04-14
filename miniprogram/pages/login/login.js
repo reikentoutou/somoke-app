@@ -1,4 +1,5 @@
 const app = getApp();
+const storeUtil = require('../../utils/store');
 
 Page({
   data: {
@@ -8,7 +9,13 @@ Page({
   onShow() {
     var token = app.globalData.token || wx.getStorageSync('token');
     if (token) {
-      wx.switchTab({ url: '/pages/overview/overview' });
+      if (storeUtil.sessionNeedsOnboarding()) {
+        wx.redirectTo({ url: '/pages/onboarding/onboarding' });
+      } else if (storeUtil.sessionNeedsStoreSelection()) {
+        wx.redirectTo({ url: '/pages/store-select/store-select' });
+      } else {
+        wx.switchTab({ url: '/pages/overview/overview' });
+      }
     }
   },
 
@@ -17,8 +24,14 @@ Page({
     this.setData({ loading: true });
     app
       .login()
-      .then(function () {
-        wx.switchTab({ url: '/pages/overview/overview' });
+      .then(function (data) {
+        if (storeUtil.loginPayloadNeedsOnboarding(data)) {
+          wx.redirectTo({ url: '/pages/onboarding/onboarding' });
+        } else if (storeUtil.loginPayloadNeedsStoreSelection(data)) {
+          wx.redirectTo({ url: '/pages/store-select/store-select' });
+        } else {
+          wx.switchTab({ url: '/pages/overview/overview' });
+        }
       })
       .catch(function () {
         wx.showToast({ title: '登录失败，请重试', icon: 'none' });

@@ -1,0 +1,69 @@
+<view class="page-container sub-page">
+  <view wx:if="{{loading}}" class="body-md state-line">加载中…</view>
+  <view wx:elif="{{errMsg}}" class="body-md state-line state-err">{{errMsg}}</view>
+  <block wx:else>
+    <view wx:if="{{!shifts.length}}" class="body-md state-line">当前门店暂无启用班次</view>
+    <view
+      wx:for="{{shifts}}"
+      wx:key="id"
+      class="card shift-card {{canEdit ? 'shift-card-tap' : ''}}"
+      hover-class="{{canEdit ? 'shift-card-hover' : ''}}"
+      data-id="{{item.id}}"
+      bindtap="onShiftCardTap"
+    >
+      <view class="shift-card-top">
+        <text class="title-md shift-name">{{item.name}}</text>
+        <text wx:if="{{canEdit}}" class="label-sm shift-edit-hint">编辑</text>
+      </view>
+      <text class="body-md shift-time">{{item.start_time}} — {{item.end_time}}</text>
+    </view>
+
+    <view wx:if="{{canEdit}}" class="shift-add-btn" hover-class="shift-add-btn-hover" bindtap="openAdd">
+      <text class="shift-add-plus">+</text>
+      <text class="shift-add-text">新增班次</text>
+    </view>
+
+    <text wx:if="{{!canEdit}}" class="body-md footnote">仅门店老板可新增或修改班次。</text>
+  </block>
+
+  <view wx:if="{{editorVisible}}" class="shift-editor-mask" bindtap="closeEditor">
+    <view class="shift-editor" catchtap="noop">
+      <text class="shift-editor-title">{{isAdd ? '新增班次' : '编辑班次'}}</text>
+
+      <view class="shift-editor-body">
+        <view class="shift-field">
+          <text class="label-sm shift-field-label">名称</text>
+          <input class="shift-field-input body-md" maxlength="32" placeholder="如 早班" value="{{formName}}" bindinput="onFormName" />
+        </view>
+
+        <view class="shift-field-row shift-time-row">
+          <view class="shift-field shift-field--half">
+            <text class="label-sm shift-field-label">上班时间</text>
+            <picker mode="time" value="{{formStart}}" bindchange="onFormStart">
+              <view class="shift-picker-val body-md">{{formStart}}</view>
+            </picker>
+          </view>
+          <view class="shift-field shift-field--half">
+            <text class="label-sm shift-field-label">下班时间</text>
+            <picker mode="time" value="{{formEnd}}" bindchange="onFormEnd">
+              <view class="shift-picker-val body-md">{{formEnd}}</view>
+            </picker>
+          </view>
+        </view>
+
+        <view class="shift-field shift-field--last">
+          <text class="label-sm shift-field-label">排序</text>
+          <input class="shift-field-input body-md" type="number" placeholder="数字越小越靠前" value="{{formSort}}" bindinput="onFormSort" />
+        </view>
+      </view>
+
+      <view class="shift-editor-actions">
+        <view wx:if="{{!isAdd}}" class="shift-delete-text body-md" catchtap="confirmDelete">停用此班次</view>
+        <view class="shift-save-btn {{saving ? 'disabled' : ''}}" catchtap="submitEditor">
+          {{saving ? '保存中…' : '保存'}}
+        </view>
+      </view>
+      <text class="body-md shift-editor-cancel" catchtap="closeEditor">取消</text>
+    </view>
+  </view>
+</view>

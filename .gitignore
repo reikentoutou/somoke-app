@@ -1,9 +1,6 @@
-# 含密码/密钥的配置文件
-api/config/database.php
-api/config/wechat.php
-
-# 环境变量
+# 环境变量与密钥
 .env
+*.pem
 
 # macOS
 .DS_Store
@@ -16,8 +13,6 @@ api/config/wechat.php
 miniprogram_npm/
 node_modules/
 
-# 日志
+# 日志与临时文件
 *.log
-
-# 临时打包 / 备份
 *.zip

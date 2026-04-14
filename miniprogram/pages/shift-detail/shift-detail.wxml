@@ -1,101 +1,244 @@
 <view class="shift-detail-page">
-  <!-- Header: title + info card -->
-  <view class="shift-detail-header">
-    <view class="shift-detail-header__main">
-      <text class="label-sm shift-detail-header__eyebrow">SHIFT OVERVIEW</text>
-      <text class="headline-lg shift-detail-header__title">{{shiftName}}</text>
-    </view>
-    <view class="shift-detail-info card">
-      <view class="shift-detail-info__row">
-        <text class="label-sm shift-detail-info__label">记录日期</text>
-        <text class="title-md shift-detail-info__value">{{recordDateDisplay}}</text>
+  <block wx:if="{{!editing}}">
+    <view class="shift-detail-header">
+      <view class="shift-detail-header__main">
+        <text class="label-sm shift-detail-header__eyebrow">SHIFT OVERVIEW</text>
+        <text class="headline-lg shift-detail-header__title">{{shiftName}}</text>
       </view>
-      <view class="shift-detail-info__recorder">
-        <view class="shift-detail-info__avatar" wx:if="{{recorderInitial}}">
-          <text class="shift-detail-info__avatar-text">{{recorderInitial}}</text>
+      <view class="shift-detail-info card">
+        <view class="shift-detail-info__row">
+          <text class="label-sm shift-detail-info__label">记录日期</text>
+          <text class="title-md shift-detail-info__value">{{recordDateDisplay}}</text>
         </view>
-        <view class="shift-detail-info__recorder-text">
-          <text class="label-sm shift-detail-info__label">记录人</text>
-          <text class="body-md shift-detail-info__name">{{recorderName}}</text>
+        <view class="shift-detail-info__recorder">
+          <view class="shift-detail-info__avatar" wx:if="{{recorderInitial}}">
+            <text class="shift-detail-info__avatar-text">{{recorderInitial}}</text>
+          </view>
+          <view class="shift-detail-info__recorder-text">
+            <text class="label-sm shift-detail-info__label">记录人</text>
+            <text class="body-md shift-detail-info__name">{{recorderName}}</text>
+          </view>
         </view>
       </view>
     </view>
-  </view>
 
-  <!-- Hero: total sold -->
-  <view class="shift-detail-hero">
-    <text class="label-sm shift-detail-hero__label">TOTAL SOLD</text>
-    <view class="shift-detail-hero__amount-row">
-      <text class="display-lg shift-detail-hero__num">{{qtySoldFormatted}}</text>
-      <text class="shift-detail-hero__units">units</text>
+    <view class="shift-detail-hero">
+      <text class="label-sm shift-detail-hero__label">TOTAL SOLD</text>
+      <view class="shift-detail-hero__amount-row">
+        <text class="display-lg shift-detail-hero__num">{{qtySoldFormatted}}</text>
+        <text class="shift-detail-hero__units">units</text>
+      </view>
     </view>
-  </view>
 
-  <!-- Metrics -->
-  <view class="shift-detail-metrics">
-    <view class="shift-detail-metric card-low">
-      <text class="label-sm shift-detail-metric__label">上班数量</text>
-      <text class="headline-lg shift-detail-metric__value">{{qtyOpeningFormatted}}</text>
+    <view class="shift-detail-metrics">
+      <view class="shift-detail-metric card-low">
+        <text class="label-sm shift-detail-metric__label">上班数量</text>
+        <text class="headline-lg shift-detail-metric__value">{{qtyOpeningFormatted}}</text>
+      </view>
+      <view class="shift-detail-metric card-low">
+        <text class="label-sm shift-detail-metric__label">下班数量</text>
+        <text class="headline-lg shift-detail-metric__value">{{qtyClosingFormatted}}</text>
+      </view>
+      <view class="shift-detail-metric card-low">
+        <text class="label-sm shift-detail-metric__label">赠送量</text>
+        <text class="headline-lg shift-detail-metric__value">{{qtyGiftFormatted}}</text>
+      </view>
     </view>
-    <view class="shift-detail-metric card-low">
-      <text class="label-sm shift-detail-metric__label">下班数量</text>
-      <text class="headline-lg shift-detail-metric__value">{{qtyClosingFormatted}}</text>
-    </view>
-    <view class="shift-detail-metric card-low">
-      <text class="label-sm shift-detail-metric__label">赠送量</text>
-      <text class="headline-lg shift-detail-metric__value">{{qtyGiftFormatted}}</text>
-    </view>
-  </view>
 
-  <!-- 支付明细 -->
-  <view class="shift-detail-section">
-    <text class="label-sm shift-detail-section__eyebrow">PAYMENT BREAKDOWN</text>
-    <text class="title-md shift-detail-section__title">支付明细</text>
-    <view class="shift-detail-pay card">
-      <view class="shift-detail-pay__row">
-        <view class="shift-detail-pay__icon shift-detail-pay__icon--wechat" />
-        <view class="shift-detail-pay__mid">
-          <text class="title-md">微信支付</text>
-          <text class="body-md shift-detail-pay__sub">{{soldWechat}} 份卖出</text>
+    <view class="shift-detail-section">
+      <text class="label-sm shift-detail-section__eyebrow">PAYMENT BREAKDOWN</text>
+      <text class="title-md shift-detail-section__title">支付明细</text>
+      <view class="shift-detail-pay card">
+        <view class="shift-detail-pay__row">
+          <view class="shift-detail-pay__icon shift-detail-pay__icon--wechat" />
+          <view class="shift-detail-pay__mid">
+            <text class="title-md">微信支付</text>
+            <text class="body-md shift-detail-pay__sub">{{soldWechat}} 份卖出</text>
+          </view>
+          <text class="title-md shift-detail-pay__amt">¥{{wechatAmountStr}}</text>
         </view>
-        <text class="title-md shift-detail-pay__amt">¥{{wechatAmountStr}}</text>
-      </view>
-      <view class="shift-detail-pay__divider" />
-      <view class="shift-detail-pay__row">
-        <view class="shift-detail-pay__icon shift-detail-pay__icon--alipay" />
-        <view class="shift-detail-pay__mid">
-          <text class="title-md">支付宝</text>
-          <text class="body-md shift-detail-pay__sub">{{soldAlipay}} 份卖出</text>
+        <view class="shift-detail-pay__divider" />
+        <view class="shift-detail-pay__row">
+          <view class="shift-detail-pay__icon shift-detail-pay__icon--alipay" />
+          <view class="shift-detail-pay__mid">
+            <text class="title-md">支付宝</text>
+            <text class="body-md shift-detail-pay__sub">{{soldAlipay}} 份卖出</text>
+          </view>
+          <text class="title-md shift-detail-pay__amt">¥{{alipayAmountStr}}</text>
         </view>
-        <text class="title-md shift-detail-pay__amt">¥{{alipayAmountStr}}</text>
-      </view>
-      <view class="shift-detail-pay__divider" />
-      <view class="shift-detail-pay__row">
-        <view class="shift-detail-pay__icon shift-detail-pay__icon--cash" />
-        <view class="shift-detail-pay__mid">
-          <text class="title-md">现金支付</text>
-          <text class="body-md shift-detail-pay__sub">{{soldCash}} 份卖出</text>
+        <view class="shift-detail-pay__divider" />
+        <view class="shift-detail-pay__row">
+          <view class="shift-detail-pay__icon shift-detail-pay__icon--cash" />
+          <view class="shift-detail-pay__mid">
+            <text class="title-md">现金支付</text>
+            <text class="body-md shift-detail-pay__sub">{{soldCash}} 份卖出</text>
+          </view>
+          <text class="title-md shift-detail-pay__amt">¥{{cashAmountStr}}</text>
         </view>
-        <text class="title-md shift-detail-pay__amt">¥{{cashAmountStr}}</text>
       </view>
     </view>
-  </view>
 
-  <!-- 现金清算 -->
-  <view class="shift-detail-section shift-detail-section--last">
-    <text class="label-sm shift-detail-section__eyebrow">CASH SETTLEMENT</text>
-    <text class="title-md shift-detail-section__title">现金清算</text>
-    <view class="shift-detail-cash">
-      <view class="shift-detail-cash__cell card-low">
-        <text class="label-sm shift-detail-cash__label">上班现金</text>
-        <text class="headline-lg shift-detail-cash__value">¥{{cashOpeningStr}}</text>
-      </view>
-      <view class="shift-detail-cash__cell shift-detail-cash__cell--elevated card">
-        <text class="label-sm shift-detail-cash__label">下班现金</text>
-        <text class="headline-lg shift-detail-cash__value">¥{{cashClosingStr}}</text>
+    <view class="shift-detail-section shift-detail-section--last">
+      <text class="label-sm shift-detail-section__eyebrow">CASH SETTLEMENT</text>
+      <text class="title-md shift-detail-section__title">现金清算</text>
+      <view class="shift-detail-cash">
+        <view class="shift-detail-cash__cell card-low">
+          <text class="label-sm shift-detail-cash__label">上班现金</text>
+          <text class="headline-lg shift-detail-cash__value">¥{{cashOpeningStr}}</text>
+        </view>
+        <view class="shift-detail-cash__cell shift-detail-cash__cell--elevated card">
+          <text class="label-sm shift-detail-cash__label">下班现金</text>
+          <text class="headline-lg shift-detail-cash__value">¥{{cashClosingStr}}</text>
+        </view>
       </view>
     </view>
-  </view>
 
-  <view class="bottom-spacer" />
+    <view wx:if="{{canEdit}}" class="shift-detail-actions">
+      <view class="shift-detail-edit-btn" hover-class="shift-detail-edit-btn-hover" bindtap="onTapEditRecord">
+        <text class="body-md shift-detail-edit-btn-text">修改本条记录</text>
+      </view>
+    </view>
+
+    <view class="bottom-spacer" />
+  </block>
+
+  <block wx:else>
+    <view class="page-container">
+      <view class="headline-section">
+        <text class="label-sm">修改记录</text>
+        <text class="headline-lg">修改记账数据</text>
+        <text class="body-md entry-cancel" bindtap="cancelInlineEdit">返回详情</text>
+      </view>
+
+      <view class="picker-row">
+        <view class="card picker-card">
+          <text class="label-sm">日期</text>
+          <picker mode="date" value="{{recordDate}}" bindchange="onEditDateChange">
+            <text class="picker-value">{{recordDate || '请选择'}}</text>
+          </picker>
+        </view>
+        <view class="card picker-card">
+          <text class="label-sm">所属班次</text>
+          <block wx:if="{{shiftConfigs && shiftConfigs.length}}">
+            <picker range="{{shiftConfigs}}" range-key="name" value="{{selectedShiftIndex}}" bindchange="onEditShiftChange">
+              <text class="picker-value">{{shiftPickerLabel}}</text>
+            </picker>
+          </block>
+          <text wx:else class="picker-value picker-value--empty">暂无班次</text>
+        </view>
+      </view>
+
+      <view class="name-section">
+        <text class="label-sm">记账姓名</text>
+        <picker mode="selector" range="{{recorderNameList || []}}" value="{{recorderNameIndex}}" bindchange="onEditRecorderPick">
+          <view class="name-picker-display">
+            <text class="name-display-text">{{recorderPickerDisplay || '请选择'}}</text>
+            <text class="name-picker-chev">›</text>
+          </view>
+        </picker>
+      </view>
+
+      <view class="card-low qty-card">
+        <view class="qty-row">
+          <view class="qty-col">
+            <text class="label-sm qty-label">上班数量</text>
+            <input class="qty-input" type="number" placeholder="0"
+                   value="{{qtyOpening}}" data-field="qtyOpening" bindinput="onEditInput" />
+          </view>
+          <view class="qty-divider"></view>
+          <view class="qty-col right">
+            <text class="label-sm qty-label right">下班数量</text>
+            <input class="qty-input right" type="number" placeholder="0"
+                   value="{{qtyClosing}}" data-field="qtyClosing" bindinput="onEditInput" />
+          </view>
+        </view>
+      </view>
+
+      <view class="payment-section">
+        <text class="title-md">支付方式统计</text>
+
+        <view class="card pay-item">
+          <view class="pay-left">
+            <view class="pay-icon wechat"><text>微</text></view>
+            <text class="pay-name">微信卖出数量</text>
+          </view>
+          <input class="pay-input" type="number" placeholder="0"
+                 value="{{soldWechatStr}}" data-field="soldWechatStr" bindinput="onEditInput" />
+        </view>
+
+        <view class="card pay-item">
+          <view class="pay-left">
+            <view class="pay-icon alipay"><text>支</text></view>
+            <text class="pay-name">支付宝卖出数量</text>
+          </view>
+          <input class="pay-input" type="number" placeholder="0"
+                 value="{{soldAlipayStr}}" data-field="soldAlipayStr" bindinput="onEditInput" />
+        </view>
+
+        <view class="card pay-item">
+          <view class="pay-left">
+            <view class="pay-icon cash"><text>现</text></view>
+            <text class="pay-name">现金卖出数量</text>
+          </view>
+          <input class="pay-input" type="number" placeholder="0"
+                 value="{{soldCashStr}}" data-field="soldCashStr" bindinput="onEditInput" />
+        </view>
+
+        <view class="card pay-item gift">
+          <view class="pay-left">
+            <view class="pay-icon gift-icon"><text>赠</text></view>
+            <text class="pay-name err">赠送量</text>
+          </view>
+          <input class="pay-input err" type="number" placeholder="0"
+                 value="{{qtyGift}}" data-field="qtyGift" bindinput="onEditInput" />
+        </view>
+      </view>
+
+      <view class="summary-card">
+        <text class="summary-label">结果预估报告</text>
+
+        <view class="summary-main">
+          <view class="summary-main-top">
+            <text class="summary-hint">支付渠道售出合计（件）</text>
+            <text class="summary-big">{{paymentSoldTotal}}</text>
+          </view>
+          <text class="summary-formula">营业额 = {{unitPriceLabel}} 円/件 ×（微信+支付宝+现金）；赠送不计入</text>
+        </view>
+
+        <view class="summary-revenue-block">
+          <text class="summary-hint summary-hint-rev">预估营业额</text>
+          <text class="summary-revenue-jpy">{{totalRevenueJpy}} 円</text>
+        </view>
+
+        <view class="summary-inventory-hint">
+          <text class="summary-inventory-text">盘点：上班−下班−赠送 = {{qtySold}} 件（与支付合计可对账）</text>
+        </view>
+
+        <view wx:if="{{hasSoftWarnings}}" class="soft-warn-box">
+          <text class="soft-warn-title">核对提醒（仍可保存）</text>
+          <text wx:for="{{softWarnings}}" wx:for-index="widx" wx:key="widx" class="soft-warn-line">· {{item}}</text>
+        </view>
+
+        <view class="summary-grid">
+          <view class="summary-col">
+            <text class="summary-sub-label">上班现金</text>
+            <input class="summary-input" type="digit" placeholder="¥ 0.00"
+                   value="{{cashOpening}}" data-field="cashOpening" bindinput="onEditInput" />
+          </view>
+          <view class="summary-col right">
+            <text class="summary-sub-label">下班现金</text>
+            <input class="summary-input right" type="digit" placeholder="¥ 0.00"
+                   value="{{cashClosing}}" data-field="cashClosing" bindinput="onEditInput" />
+          </view>
+        </view>
+      </view>
+
+      <view class="submit-btn {{editSubmitting ? 'disabled' : ''}}" bindtap="submitInlineEdit">
+        <text>保存修改</text>
+        <text class="arrow">→</text>
+      </view>
+
+      <view class="bottom-spacer"></view>
+    </view>
+  </block>
 </view>

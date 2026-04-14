@@ -2,9 +2,17 @@
   "pages": [
     "pages/overview/overview",
     "pages/login/login",
+    "pages/onboarding/onboarding",
+    "pages/store-create/store-create",
+    "pages/store-join/store-join",
+    "pages/store-select/store-select",
     "pages/entry/entry",
     "pages/reports/reports",
     "pages/settings/settings",
+    "pages/profile-edit/profile-edit",
+    "pages/settings-shifts/settings-shifts",
+    "pages/settings-recorders/settings-recorders",
+    "pages/settings-team/settings-team",
     "pages/shift-detail/shift-detail"
   ],
   "tabBar": {
@@ -27,5 +35,6 @@
     "backgroundTextStyle": "dark"
   },
   "style": "v2",
-  "sitemapLocation": "sitemap.json"
+  "sitemapLocation": "sitemap.json",
+  "cloud": true
 }

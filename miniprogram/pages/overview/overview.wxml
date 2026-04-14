@@ -1,5 +1,4 @@
 <view class="page-container overview-page">
-  <!-- Hero -->
   <view class="overview-hero">
     <text class="label-sm overview-hero__label">当日销售营收</text>
     <view class="overview-hero__amount-row">
@@ -12,7 +11,6 @@
     </view>
   </view>
 
-  <!-- Channel grid -->
   <view class="overview-channels">
     <view class="overview-channel card">
       <text class="label-sm overview-channel__label">微信销量</text>
@@ -32,7 +30,6 @@
     </view>
   </view>
 
-  <!-- Shift section -->
   <view class="overview-section">
     <view class="overview-section__head">
       <text class="title-md overview-section__title">班次详情</text>

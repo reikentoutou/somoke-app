@@ -1,0 +1,12 @@
+---
+description: 云开发数据模型与部署说明（文档 + 云函数目录）
+globs: docs/CLOUD_SETUP.md,docs/API_CLOUD.md,cloudfunctions/**/*
+alwaysApply: false
+---
+
+# 云开发 / 数据（Somoke Ledger）
+
+- **数据模型与权限**：以 `docs/CLOUD_SETUP.md` 为准；集合名、客户端禁止直连等勿与小程序随意约定冲突。
+- **接口契约**：`docs/API_CLOUD.md` — `action` 名、入参、`{ code, msg, data }` 响应。
+- **实现**：`cloudfunctions/api/index.js`；部署前在开发者工具内 **上传并部署**；依赖变更需 **云端安装依赖**。
+- **勿**再引入 Mixhost / PHP / MySQL 作为当前方案的主路径；历史方案已从仓库移除。

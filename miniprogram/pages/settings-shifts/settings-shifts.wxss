@@ -1,0 +1,243 @@
+.sub-page {
+  padding: 32rpx 32rpx 120rpx;
+  box-sizing: border-box;
+  min-height: 100vh;
+}
+
+.state-line {
+  padding: 48rpx 16rpx;
+  text-align: center;
+  color: #474747;
+}
+
+.state-err {
+  color: #ba1a1a;
+}
+
+.shift-card {
+  margin-bottom: 24rpx;
+  display: flex;
+  flex-direction: column;
+}
+
+.shift-card-tap {
+  position: relative;
+}
+
+.shift-card-hover {
+  opacity: 0.92;
+}
+
+.shift-card-top {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.shift-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 16rpx;
+}
+
+.shift-edit-hint {
+  flex-shrink: 0;
+  color: #5e5e63;
+  letter-spacing: 2rpx;
+}
+
+.shift-time {
+  display: block;
+  color: #474747;
+}
+
+.shift-add-btn {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  margin-top: 16rpx;
+  margin-bottom: 32rpx;
+  padding: 26rpx 24rpx;
+  border-radius: 999rpx;
+  border: 2rpx solid #000000;
+  background-color: #ffffff;
+  box-sizing: border-box;
+}
+
+.shift-add-btn-hover {
+  background-color: #f9f9fb;
+}
+
+.shift-add-plus {
+  font-size: 36rpx;
+  font-weight: 500;
+  margin-right: 12rpx;
+  color: #000000;
+  line-height: 1;
+}
+
+.shift-add-text {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #000000;
+}
+
+.footnote {
+  display: block;
+  margin-top: 40rpx;
+  color: #5e5e63;
+  line-height: 1.45;
+}
+
+/* ----- 弹层 ----- */
+
+.shift-editor-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background-color: rgba(26, 28, 29, 0.5);
+  z-index: 10040;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48rpx 32rpx;
+  box-sizing: border-box;
+}
+
+.shift-editor {
+  width: 100%;
+  max-width: 640rpx;
+  max-height: calc(100vh - 120rpx);
+  background-color: #ffffff;
+  border-radius: 32rpx;
+  padding: 40rpx 36rpx 32rpx;
+  box-sizing: border-box;
+  box-shadow: 0 24rpx 80rpx rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.shift-editor-title {
+  display: block;
+  flex-shrink: 0;
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #000000;
+  margin-bottom: 28rpx;
+}
+
+.shift-editor-body {
+  flex: 1;
+  min-height: 0;
+  max-height: 52vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 4rpx;
+  box-sizing: border-box;
+}
+
+.shift-field {
+  margin-bottom: 32rpx;
+}
+
+.shift-field--last {
+  margin-bottom: 0;
+}
+
+.shift-field-label {
+  display: block;
+  margin-bottom: 16rpx;
+  color: #5e5e63;
+}
+
+.shift-field-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 22rpx 0 20rpx;
+  min-height: 44rpx;
+  line-height: 1.45;
+  border-bottom: 2rpx solid #e8e8ea;
+  color: #000000;
+  box-sizing: border-box;
+}
+
+.shift-field-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 32rpx;
+  margin-bottom: 32rpx;
+}
+
+.shift-time-row .shift-field--half {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.shift-field--half .shift-field-label {
+  margin-bottom: 16rpx;
+}
+
+.shift-picker-val {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 22rpx 0 20rpx;
+  min-height: 44rpx;
+  line-height: 1.45;
+  border-bottom: 2rpx solid #e8e8ea;
+  color: #000000;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shift-editor-actions {
+  flex-shrink: 0;
+  margin-top: 36rpx;
+  padding-top: 8rpx;
+}
+
+.shift-delete-text {
+  text-align: center;
+  color: #ba1a1a;
+  margin-bottom: 24rpx;
+  padding: 12rpx;
+}
+
+.shift-save-btn {
+  width: 100%;
+  text-align: center;
+  padding: 26rpx 24rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #ffffff;
+  background-color: #000000;
+  border-radius: 999rpx;
+  box-sizing: border-box;
+}
+
+.shift-save-btn.disabled {
+  opacity: 0.55;
+}
+
+.shift-editor-cancel {
+  display: block;
+  text-align: center;
+  margin-top: 24rpx;
+  color: #5e5e63;
+  padding: 12rpx;
+}

@@ -1,47 +1,48 @@
 # 三会话开局 Prompt（复制到新聊天首条发送）
 
-以下每条单独开一个 Cursor 聊天（或 Agent），**整段粘贴**作为第一条消息即可。  
-配合 `.cursor/rules/` 里同名领域的规则使用。
+每条开一个 Cursor 聊天，**整段粘贴**为第一条消息。配合 `.cursor/rules/` 使用。
+
+文档入口：**[README.md](../README.md)** → `docs/CLOUD_SETUP.md` / `docs/API_CLOUD.md`。
 
 ---
 
-## 会话 1：数据库（DB）
+## 会话 1：云函数 / 后端（Node）
 
 ```
-你是本项目的「数据库」专职助手。
+你是本项目的「云函数后端」专职助手。
 
-【允许修改】仅 `database/` 目录：`schema.sql`、`database/migrations/*.sql`。必要时可读 `README.md`、`docs/` 了解业务。
+【允许修改】`cloudfunctions/api/`（含 `index.js`、`package.json`、`config.json`）。可更新 `docs/API_CLOUD.md` 以同步 action 契约；若涉及新集合或权限，同步 `docs/CLOUD_SETUP.md`。
 
-【禁止】不要修改 `api/`、`miniprogram/` 下的任何文件；不要提交或生成含真实密码、主机账号的内容。
+【禁止】不要改 `miniprogram/`（除非用户明确要求联调一处）；不要重新引入 PHP/MySQL 目录。
 
 【约定】
-- 引擎 InnoDB，字符集 utf8mb4；字段、表用中文 COMMENT 说明业务含义。
-- 任何对线上已有库的变更必须提供 **可执行的 migration 文件**（放在 `database/migrations/`，序号递增），并同步更新 `schema.sql` 中对应定义（若适用）。
-- 与 API 对齐：表名、字段名一旦确定，在回复里用列表写清「字段名 → 含义 → 类型」，方便 API 会话实现。
+- 使用 `wx-server-sdk`；`cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })`。
+- 鉴权以 `cloud.getWXContext().OPENID` 为准；返回 `{ code, msg, data }`，与 `miniprogram/utils/request.js` 解析一致。
+- 业务路由用 `event.action`；新 action 须在 `docs/API_CLOUD.md` 登记，并在 `request.js` 的 ACTION_MAP 增加映射（若需兼容旧 path）。
+- 云数据库集合与权限约定见 `docs/CLOUD_SETUP.md`；勿在回复中编造未落地的集合名。
 
-【当前任务】（由你填写）
-<在此写下本次需求，例如：为取现记录加一张表……>
+【当前任务】
+<填写需求，例如：为 xxx 增加 action …>
 ```
 
 ---
 
-## 会话 2：后端 API（PHP）
+## 会话 2：数据模型 / 文档（云数据库）
 
 ```
-你是本项目的「API」专职助手。
+你是本项目的「云数据库与数据模型」专职助手。
 
-【允许修改】仅 `api/` 目录（含 `api/core/`），以及为说明接口而更新 `docs/api.md`（若存在）。
+【允许修改】`docs/CLOUD_SETUP.md`（集合说明、权限、索引建议）；必要时在回复中给出云函数内应使用的字段清单，由会话 1 落代码。
 
-【禁止】不要修改 `database/`（表结构变更由 DB 会话出 migration）；不要修改 `miniprogram/`；不要创建或提交 `api/config/database.php`、`api/config/wechat.php`（仅可改 `*.example.php` 中的占位说明）。
+【禁止】不要改 `miniprogram/`、`cloudfunctions/` 内的实现代码（除非用户明确要求你直接改）。
 
 【约定】
-- 使用已有工具：`require_once` 使用 `__DIR__`；数据库用 `getDB()` + PDO 预处理；响应用 `jsonSuccess` / `jsonError`（见 `api/core/response.php`）；需登录接口用 `requireAuth()`（见 `api/core/auth.php`）。
-- 请求体 JSON：`getJsonBody()`；鉴权 Header：`Authorization: Bearer <token>`。
-- 兼容 PHP 7.x：避免 PHP 8 专有函数；异常返回 JSON，避免 HTML 致命错误输出到小程序。
-- 若需要新表/新字段：在回复中列出所需 SQL 或请经理交给 DB 会话，不要擅自改已提交的 schema 而不留 migration。
+- 数据以云文档数据库为准；字段名、类型与 `cloudfunctions/api/index.js` 中读写保持一致。
+- 权限：默认假设客户端不直连写库；敏感校验在云函数。
+- 变更模型时，在文档中写清「集合 → 字段 → 含义」，并提示需在控制台创建的索引。
 
-【当前任务】（由你填写）
-<在此写下本次需求，例如：新增 GET /xxx.php 返回……>
+【当前任务】
+<填写需求，例如：为取现记录增加集合 xxx 的字段设计……>
 ```
 
 ---
@@ -51,24 +52,25 @@
 ```
 你是本项目的「微信小程序前端」专职助手（页面逻辑 + WXML/WXSS）。
 
-【允许修改】仅 `miniprogram/` 目录（含 `custom-tab-bar/`、`utils/`、`pages/**`）。
+【允许修改】仅 `miniprogram/`（含 `custom-tab-bar/`、`utils/`、`pages/**`）。
 
-【禁止】不要修改 `api/`、`database/`；不要轻易改 `miniprogram/utils/request.js` 里 `BASE_URL` 与全局 401 行为，除非用户明确要求。
+【禁止】不要改 `cloudfunctions/`；不要擅自改 `utils/request.js` 的云函数路由与 401 行为，除非用户明确要求。
 
 【约定】
-- 网络请求统一走 `utils/request.js` 的 `get`/`post`；需要登录的页面用 `utils/auth.js` 的 `redirectToLoginIfNeeded()`（与现有 Tab 页一致）。
-- 列表渲染：`wx:for` 的数据必须是数组，使用 `{{list || []}}` 等形式避免 `null` 可迭代错误。
-- 视觉与命名与现有 `app.wxss`、各页 wxss 保持一致（Digital Ledger 风格）；文案用简体中文。
-- 对接 API 时字段名须与 `get_records` / `add_record` / `login` 等实际 JSON 一致；若接口未就绪，用 TODO 注释标出依赖 API 会话。
+- 请求统一 `utils/request.js` 的 `get`/`post`（内部为 `wx.cloud.callFunction`）；登录与门店状态与 `utils/store.js`、`utils/auth.js` 一致。
+- 录入与班次详情「改账」若涉及营业额/软校验，优先复用 `utils/ledgerRecordForm.js`，避免与云函数单价逻辑分叉。
+- `wx:for` 绑定数组，模板用 `{{list || []}}`；文案简体中文。
+- 对接字段以 `docs/API_CLOUD.md` 与云函数返回为准。
 
-【当前任务】（由你填写）
-<在此写下本次需求，例如：报表页增加……展示>
+【当前任务】
+<填写需求>
 ```
 
 ---
 
-## 经理用法提示
+## 经理提示
 
-1. 三个会话 **各用一条分支** 或错开合并时间，减少冲突。  
-2. 顺序建议：**DB（或 migration）→ API → 小程序**。  
-3. 每条 Prompt 末尾的 **【当前任务】** 每次开新任务时改掉即可。
+1. 三会话尽量 **分支隔离** 或错峰合并。  
+2. 推荐顺序：**数据文档（会话 2）定字段 → 云函数（会话 1）实现 → 小程序（会话 3）改 UI/调用**。  
+3. 每条末尾 **【当前任务】** 随需求更新。  
+4. 合并前核对：`API_CLOUD.md` 的 action 表与 `request.js` 的 `ACTION_MAP` 一致。

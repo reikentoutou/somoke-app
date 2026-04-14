@@ -1,6 +1,5 @@
 <view class="page-container">
 
-  <!-- 月份选择 -->
   <view class="month-picker-row">
     <text class="label-sm month-picker-label">报表月份</text>
     <picker mode="date" fields="month" value="{{monthPickerValue}}" bindchange="onMonthChange">
@@ -11,7 +10,6 @@
     </picker>
   </view>
 
-  <!-- Hero -->
   <view class="reports-hero">
     <text class="label-sm hero-label">{{heroMonthLabel}}</text>
     <view class="hero-amount-row">
@@ -24,7 +22,6 @@
     </view>
   </view>
 
-  <!-- 三列指标 -->
   <view class="metrics-grid">
     <view class="card metric-card">
       <view class="metric-icon metric-icon-wechat">
@@ -53,7 +50,6 @@
     </view>
   </view>
 
-  <!-- 营收趋势 -->
   <view class="section-head">
     <text class="title-md section-title">营收趋势</text>
   </view>
@@ -89,7 +85,6 @@
     <view class="chart-empty body-md" wx:else>本月暂无数据</view>
   </view>
 
-  <!-- 每日班次明细 -->
   <view class="section-head section-head-spaced">
     <text class="title-md section-title">每日班次明细</text>
   </view>
@@ -102,7 +97,13 @@
       </view>
       <view class="card shift-list-card">
         <block wx:for="{{group.items}}" wx:key="id" wx:for-item="shift">
-          <view class="shift-item">
+          <view
+            class="shift-item shift-item--tap"
+            hover-class="shift-item-hover"
+            bindtap="goShiftDetail"
+            data-id="{{shift.id}}"
+            data-date="{{group.date}}"
+          >
             <view class="shift-item-top">
               <text class="shift-name">{{shift.shift_name}}</text>
               <text class="shift-revenue">¥ {{shift.revenueFormatted}}</text>

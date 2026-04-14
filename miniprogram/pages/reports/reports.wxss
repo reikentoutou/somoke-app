@@ -70,7 +70,6 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 16rpx;
 }
 
 .hero-sync-dot {
@@ -79,6 +78,7 @@
   border-radius: 50%;
   background: #000000;
   flex-shrink: 0;
+  margin-right: 16rpx;
 }
 
 .hero-sync-text {
@@ -93,8 +93,7 @@
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  gap: 20rpx;
-  margin-bottom: 64rpx;
+  margin: -10rpx -10rpx 54rpx -10rpx;
 }
 
 .metric-card {
@@ -102,6 +101,7 @@
   min-width: 200rpx;
   max-width: 100%;
   box-sizing: border-box;
+  margin: 10rpx;
   border: 2rpx solid rgba(0, 0, 0, 0.05);
   border-radius: 48rpx;
   padding: 32rpx 24rpx;
@@ -126,8 +126,11 @@
   flex-direction: row;
   align-items: flex-end;
   justify-content: center;
-  gap: 8rpx;
   padding-bottom: 12rpx;
+}
+
+.metric-icon-wechat .metric-icon-bar + .metric-icon-bar {
+  margin-left: 8rpx;
 }
 
 .metric-icon-bar {
@@ -211,12 +214,12 @@
 .chart-toggle-row {
   display: flex;
   flex-direction: row;
-  gap: 16rpx;
   margin-bottom: 40rpx;
 }
 
 .chart-toggle {
   flex: 1;
+  margin-right: 16rpx;
   text-align: center;
   padding: 20rpx 24rpx;
   font-size: 26rpx;
@@ -227,6 +230,10 @@
   border-radius: 999rpx;
   line-height: 1.2;
   box-sizing: border-box;
+}
+
+.chart-toggle:last-child {
+  margin-right: 0;
 }
 
 .chart-toggle.active {
@@ -244,17 +251,21 @@
   flex-direction: row;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 12rpx;
   min-height: 320rpx;
   padding-top: 8rpx;
 }
 
 .chart-col {
   flex: 1;
+  margin-right: 12rpx;
   display: flex;
   flex-direction: column;
   align-items: center;
   min-width: 0;
+}
+
+.chart-col:last-child {
+  margin-right: 0;
 }
 
 .chart-col-hover {
@@ -291,7 +302,6 @@
   min-height: 0;
   background: #000000;
   border-radius: 20rpx;
-  transition: height 0.35s ease-out;
 }
 
 .chart-day-label {
@@ -324,8 +334,11 @@
   display: flex;
   flex-direction: row;
   align-items: baseline;
-  gap: 20rpx;
   margin-bottom: 20rpx;
+}
+
+.date-group-header .date-big {
+  margin-right: 20rpx;
 }
 
 .date-big {
@@ -350,12 +363,23 @@
   padding: 32rpx 0;
 }
 
+.shift-item--tap {
+  border-radius: 12rpx;
+  margin-left: -8rpx;
+  margin-right: -8rpx;
+  padding-left: 8rpx;
+  padding-right: 8rpx;
+}
+
+.shift-item-hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
 .shift-item-top {
   display: flex;
   flex-direction: row;
   align-items: baseline;
   justify-content: space-between;
-  gap: 24rpx;
   margin-bottom: 12rpx;
 }
 
@@ -372,6 +396,7 @@
   font-weight: 700;
   color: #1a1c1d;
   flex-shrink: 0;
+  margin-left: 24rpx;
 }
 
 .shift-qty {
@@ -384,7 +409,6 @@
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  gap: 12rpx;
 }
 
 .pay-pill {
@@ -394,6 +418,8 @@
   padding: 10rpx 20rpx;
   border-radius: 999rpx;
   border: 2rpx solid rgba(0, 0, 0, 0.05);
+  margin-right: 12rpx;
+  margin-bottom: 12rpx;
 }
 
 .shift-divider {

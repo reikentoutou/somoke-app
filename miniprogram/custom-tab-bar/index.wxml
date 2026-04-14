@@ -3,7 +3,6 @@
         class="tab-item {{selected === index ? 'active' : ''}}"
         data-index="{{index}}" bindtap="switchTab">
 
-    <!-- 概览: 2×2 网格 -->
     <view class="tab-icon" wx:if="{{item.icon === 'grid'}}">
       <view class="i-grid">
         <view class="g"></view><view class="g"></view>
@@ -11,7 +10,6 @@
       </view>
     </view>
 
-    <!-- 录入: 圆圈 + 十字 -->
     <view class="tab-icon" wx:elif="{{item.icon === 'plus'}}">
       <view class="i-circle">
         <view class="cross-h"></view>
@@ -19,7 +17,6 @@
       </view>
     </view>
 
-    <!-- 报表: 三根柱形 -->
     <view class="tab-icon" wx:elif="{{item.icon === 'chart'}}">
       <view class="i-bars">
         <view class="b" style="height: 50%"></view>
@@ -28,7 +25,6 @@
       </view>
     </view>
 
-    <!-- 设置: 三条滑杆 -->
     <view class="tab-icon" wx:elif="{{item.icon === 'sliders'}}">
       <view class="i-sliders">
         <view class="sl"><view class="dot" style="left: 20%"></view></view>

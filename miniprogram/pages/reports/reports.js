@@ -50,6 +50,12 @@ Page({
     if (!auth.redirectToLoginIfNeeded()) {
       return;
     }
+    if (!auth.redirectToOnboardingIfNeeded()) {
+      return;
+    }
+    if (!auth.redirectToStoreSelectIfNeeded()) {
+      return;
+    }
     this.loadMonthData();
   },
 
@@ -78,6 +84,17 @@ Page({
   onChartModeWeekly() {
     if (this.data.chartMode === 'weekly') return;
     this.setData({ chartMode: 'weekly' }, () => this.applyChartFromRecords());
+  },
+
+  goShiftDetail(e) {
+    var id = e.currentTarget.dataset.id;
+    var date = e.currentTarget.dataset.date;
+    if (id == null || id === '') return;
+    var q =
+      '/pages/shift-detail/shift-detail?id=' +
+      encodeURIComponent(String(id)) +
+      (date ? '&date=' + encodeURIComponent(String(date)) : '');
+    wx.navigateTo({ url: q });
   },
 
   loadMonthData() {
@@ -259,11 +276,12 @@ Page({
       const segs = date.split('-');
       const mm = segs[1];
       const dd = segs[2];
+      const items = map[date];
       return {
         date,
         dateDisplay: `${mm}.${dd}`,
         weekday: util.getWeekday(date),
-        items: map[date]
+        items: Array.isArray(items) ? items : []
       };
     });
   }

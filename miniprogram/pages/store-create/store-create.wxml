@@ -1,0 +1,27 @@
+<view class="page-container store-form-page">
+  <view class="headline-section">
+    <text class="label-sm">新门店</text>
+    <text class="title-md form-title">创建门店</text>
+    <text class="body-md form-desc">提交后将关联到当前账号；字段名需与后端 create_store 接口一致。</text>
+  </view>
+
+  <view class="card field-card">
+    <text class="label-sm field-label">门店名称</text>
+    <input
+      class="field-input"
+      placeholder="请输入门店名称"
+      value="{{storeName}}"
+      bindinput="onNameInput"
+    />
+  </view>
+
+  <button
+    class="submit-btn"
+    type="primary"
+    loading="{{submitting}}"
+    disabled="{{submitting}}"
+    bindtap="onSubmit"
+  >
+    创建并进入首页
+  </button>
+</view>

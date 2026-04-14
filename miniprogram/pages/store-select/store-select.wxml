@@ -1,0 +1,68 @@
+<view class="page-container store-select-page">
+  <view wx:if="{{fromSettings}}" class="headline-section">
+    <text class="label-sm">门店</text>
+    <text class="title-md select-title">切换当前门店</text>
+    <text class="body-md select-desc">轻触列表即可切换；底部可创建新店或输入邀请码加入其他门店。</text>
+  </view>
+  <view wx:else class="headline-section">
+    <text class="label-sm">当前门店</text>
+    <text class="title-md select-title">请选择要进入的门店</text>
+    <text class="body-md select-desc">切换后将使用所选门店；下列为你已加入的门店。</text>
+  </view>
+
+  <view wx:if="{{loading}}" class="body-md store-select-loading">正在同步…</view>
+
+  <block wx:elif="{{!isStoreListEmpty}}">
+    <view
+      wx:for="{{stores}}"
+      wx:key="store_id"
+      class="card store-row {{item.isCurrent ? 'store-row-current' : ''}}"
+      hover-class="store-row-hover"
+      data-id="{{item.store_id}}"
+      bindtap="onPickStore"
+    >
+      <view wx:if="{{fromSettings}}" class="store-row-avatar">{{item.avatarLetter}}</view>
+      <view class="store-row-main">
+        <text class="store-name">{{item.displayName}}</text>
+        <text class="store-role">{{item.roleLabel}}</text>
+      </view>
+      <view class="store-row-trail">
+        <view wx:if="{{item.isCurrent}}" class="store-row-current-mark">
+          <view class="store-row-dot"></view>
+          <text class="store-row-current-text">使用中</text>
+        </view>
+        <text wx:else class="settings-chevron muted">›</text>
+      </view>
+    </view>
+  </block>
+
+  <view wx:elif="{{!loading}}" class="body-md empty-hint">暂无门店，请返回创建或加入。</view>
+
+  <view wx:if="{{fromSettings && !loading}}" class="store-select-footer">
+    <text class="label-sm store-select-footer-label">新店</text>
+    <view class="store-select-create" hover-class="store-select-create-hover" bindtap="goCreateStore">
+      <text class="store-select-create-plus">+</text>
+      <text class="store-select-create-text">创建新门店</text>
+    </view>
+    <text class="label-sm store-select-footer-label store-select-join-section-label">加入门店</text>
+    <view class="store-select-join-row">
+      <input
+        class="store-select-join-input body-md"
+        type="text"
+        placeholder="输入邀请码"
+        value="{{joinInviteCode}}"
+        confirm-type="done"
+        bindinput="onJoinCodeInput"
+      />
+      <view
+        class="store-select-join-btn {{joinSubmitting ? 'disabled' : ''}}"
+        hover-class="store-select-join-btn-hover"
+        bindtap="submitJoin"
+      >
+        加入
+      </view>
+    </view>
+  </view>
+
+  <view class="bottom-spacer"></view>
+</view>

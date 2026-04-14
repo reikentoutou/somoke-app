@@ -1,4 +1,5 @@
 /* 班次详情 — 编辑风排版；与 app.wxss 设计系统对齐 */
+@import '../entry/entry.wxss';
 
 .shift-detail-page {
   padding-left: 40rpx;
@@ -269,4 +270,27 @@
   font-size: 40rpx;
   font-weight: 600;
   letter-spacing: -1rpx;
+}
+
+.shift-detail-actions {
+  padding: 0 32rpx 48rpx;
+}
+
+.shift-detail-edit-btn {
+  margin-top: 24rpx;
+  padding: 28rpx 32rpx;
+  border-radius: 16rpx;
+  background: #000000;
+  align-items: center;
+  justify-content: center;
+  display: flex;
+}
+
+.shift-detail-edit-btn-hover {
+  opacity: 0.88;
+}
+
+.shift-detail-edit-btn-text {
+  color: #ffffff;
+  font-weight: 500;
 }

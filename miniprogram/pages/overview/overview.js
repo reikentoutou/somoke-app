@@ -64,12 +64,22 @@ Page({
     if (!auth.redirectToLoginIfNeeded()) {
       return;
     }
+    if (!auth.redirectToOnboardingIfNeeded()) {
+      return;
+    }
+    if (!auth.redirectToStoreSelectIfNeeded()) {
+      return;
+    }
     self.loadTodayData();
   },
 
   loadTodayData: function () {
     var self = this;
     var today = util.formatDate(new Date());
+    if (typeof self._loadSeq !== 'number') {
+      self._loadSeq = 0;
+    }
+    var seq = ++self._loadSeq;
     this.setData({ todayDate: today, loadError: false });
 
     wx.showLoading({ title: '加载中', mask: true });
@@ -77,6 +87,9 @@ Page({
     request
       .get('/get_records.php', { date: today })
       .then(function (data) {
+        if (seq !== self._loadSeq) {
+          return;
+        }
         var summary = (data && data.summary) || {};
         var raw = data && data.records;
         var list = Array.isArray(raw) ? raw.map(mapRecord) : [];
@@ -91,11 +104,16 @@ Page({
         });
       })
       .catch(function () {
+        if (seq !== self._loadSeq) {
+          return;
+        }
         self.setData({ loadError: true });
         wx.showToast({ title: '数据加载失败，请稍后重试', icon: 'none' });
       })
       .then(function () {
-        wx.hideLoading();
+        if (seq === self._loadSeq) {
+          wx.hideLoading();
+        }
       });
   },
 

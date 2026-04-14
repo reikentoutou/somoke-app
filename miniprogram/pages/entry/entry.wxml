@@ -1,12 +1,11 @@
 <view class="page-container">
 
-  <!-- Editorial Headline -->
   <view class="headline-section">
-    <text class="label-sm">新增条目</text>
-    <text class="headline-lg">新增记账数据</text>
+    <text class="label-sm">{{entryTagLabel}}</text>
+    <text class="headline-lg">{{entryTitle}}</text>
+    <text wx:if="{{isEditMode}}" class="body-md entry-cancel" bindtap="cancelEdit">取消修改</text>
   </view>
 
-  <!-- Date & Shift Picker Row -->
   <view class="picker-row">
     <view class="card picker-card">
       <text class="label-sm">日期</text>
@@ -16,19 +15,25 @@
     </view>
     <view class="card picker-card">
       <text class="label-sm">所属班次</text>
-      <picker range="{{shiftConfigs}}" range-key="name" value="{{selectedShiftIndex}}" bindchange="onShiftChange">
-        <text class="picker-value">{{shiftConfigs[selectedShiftIndex].name || '请选择'}}</text>
-      </picker>
+      <block wx:if="{{shiftConfigs && shiftConfigs.length}}">
+        <picker range="{{shiftConfigs}}" range-key="name" value="{{selectedShiftIndex}}" bindchange="onShiftChange">
+          <text class="picker-value">{{shiftPickerLabel}}</text>
+        </picker>
+      </block>
+      <text wx:else class="picker-value picker-value--empty">暂无班次（请在设置中配置）</text>
     </view>
   </view>
 
-  <!-- Recorder Name (read-only, from login) -->
   <view class="name-section">
     <text class="label-sm">记账姓名</text>
-    <text class="name-display">{{recorderName || '请先登录'}}</text>
+    <picker mode="selector" range="{{recorderNameList || []}}" value="{{recorderNameIndex}}" bindchange="onRecorderPick">
+      <view class="name-picker-display">
+        <text class="name-display-text">{{recorderPickerDisplay || '请选择'}}</text>
+        <text class="name-picker-chev">›</text>
+      </view>
+    </picker>
   </view>
 
-  <!-- Shift Quantities: Big Display -->
   <view class="card-low qty-card">
     <view class="qty-row">
       <view class="qty-col">
@@ -45,7 +50,6 @@
     </view>
   </view>
 
-  <!-- Payment Methods -->
   <view class="payment-section">
     <text class="title-md">支付方式统计</text>
 
@@ -86,13 +90,29 @@
     </view>
   </view>
 
-  <!-- Summary Card (Dark) -->
   <view class="summary-card">
     <text class="summary-label">结果预估报告</text>
 
     <view class="summary-main">
-      <text class="summary-hint">总卖出数量</text>
-      <text class="summary-big">{{qtySold}}</text>
+      <view class="summary-main-top">
+        <text class="summary-hint">支付渠道售出合计（件）</text>
+        <text class="summary-big">{{paymentSoldTotal}}</text>
+      </view>
+      <text class="summary-formula">营业额 = {{unitPriceLabel}} 円/件 ×（微信+支付宝+现金）；赠送不计入</text>
+    </view>
+
+    <view class="summary-revenue-block">
+      <text class="summary-hint summary-hint-rev">预估营业额</text>
+      <text class="summary-revenue-jpy">{{totalRevenueJpy}} 円</text>
+    </view>
+
+    <view class="summary-inventory-hint">
+      <text class="summary-inventory-text">盘点：上班−下班−赠送 = {{qtySold}} 件（与支付合计可对账）</text>
+    </view>
+
+    <view wx:if="{{hasSoftWarnings}}" class="soft-warn-box">
+      <text class="soft-warn-title">核对提醒（仍可提交）</text>
+      <text wx:for="{{softWarnings}}" wx:for-index="widx" wx:key="widx" class="soft-warn-line">· {{item}}</text>
     </view>
 
     <view class="summary-grid">
@@ -109,9 +129,8 @@
     </view>
   </view>
 
-  <!-- Submit Button -->
   <view class="submit-btn {{submitting ? 'disabled' : ''}}" bindtap="submitRecord">
-    <text>确认提交数据</text>
+    <text>{{submitBtnText}}</text>
     <text class="arrow">→</text>
   </view>
 

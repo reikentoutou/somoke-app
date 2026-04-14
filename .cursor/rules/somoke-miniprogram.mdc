@@ -7,7 +7,7 @@ alwaysApply: false
 # 小程序会话规则（Somoke Ledger）
 
 - **范围**：只改 `miniprogram/`（含 `custom-tab-bar/`、`utils/`、`pages/**`）。不要改 `api/`、`database/`。
-- **请求**：统一使用 `utils/request.js` 的 `get` / `post`；`BASE_URL` 与全局 401 处理勿擅自改动，除非用户明确要求。
+- **请求**：统一使用 `utils/request.js` 的 `get` / `post`（内部为 `wx.cloud.callFunction` 调云函数 `api`）；勿改回自建域名 `wx.request`，除非用户明确要求。
 - **401 / 未登录**：Tab 页在 `onShow` 使用 `utils/auth.js` 的 `redirectToLoginIfNeeded()`；登录页为 `pages/login/login`。
 - **列表与数据**：`wx:for` 绑定必须是数组；模板中使用 `{{arr || []}}`，JS 里用 `Array.isArray` 再 `map`，避免 `null` 导致「object null is not iterable」。
 - **样式与文案**：延续 `app.wxss` 与各页现有风格；用户可见文案用**简体中文**。

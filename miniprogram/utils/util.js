@@ -31,6 +31,12 @@ function formatMoney(amount) {
   return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
+/** 日元整数展示：90000 → "90,000" */
+function formatJpy(amount) {
+  const n = Math.round(parseFloat(amount) || 0);
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
 /**
  * 获取星期几（中文）
  */
@@ -43,5 +49,6 @@ module.exports = {
   formatDate,
   formatMonth,
   formatMoney,
+  formatJpy,
   getWeekday
 };
