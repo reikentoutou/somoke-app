@@ -1,0 +1,34 @@
+<view class="tab-bar">
+  <view
+    wx:for="{{list}}"
+    wx:key="pagePath"
+    class="tab-item {{selected === index ? 'active' : ''}}"
+    data-path="{{item.pagePath}}"
+    data-index="{{index}}"
+    bindtap="switchTab"
+  >
+    <view class="tab-icon">
+      <view wx:if="{{item.icon === 'grid'}}" class="i-grid">
+        <view class="g"></view>
+        <view class="g"></view>
+        <view class="g"></view>
+        <view class="g"></view>
+      </view>
+      <view wx:elif="{{item.icon === 'plus'}}" class="i-circle">
+        <view class="cross-h"></view>
+        <view class="cross-v"></view>
+      </view>
+      <view wx:elif="{{item.icon === 'chart'}}" class="i-bars">
+        <view class="b" style="height: 50%"></view>
+        <view class="b" style="height: 85%"></view>
+        <view class="b" style="height: 38%"></view>
+      </view>
+      <view wx:else class="i-sliders">
+        <view class="sl"><view class="dot" style="left: 20%"></view></view>
+        <view class="sl"><view class="dot" style="left: 60%"></view></view>
+        <view class="sl"><view class="dot" style="left: 35%"></view></view>
+      </view>
+    </view>
+    <text class="tab-label">{{item.text}}</text>
+  </view>
+</view>

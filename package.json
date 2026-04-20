@@ -1,0 +1,24 @@
+{
+  "name": "somoke-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "班次销售管理（微信小程序）workspace 根",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm -C packages/app dev:mp-weixin",
+    "build": "pnpm -C packages/app build:mp-weixin",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.11",
+    "prettier": "^3.4.2",
+    "typescript": "~5.7.2"
+  },
+  "lint-staged": {
+    "*.{ts,vue,js,json,md}": "prettier --write"
+  }
+}

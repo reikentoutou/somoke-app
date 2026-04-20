@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "preserve",
+    "noEmit": true,
+    "lib": ["ES2020", "DOM"],
+    "types": ["@dcloudio/types", "@types/node"],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@shared/*": ["../shared/src/*"]
+    },
+    "baseUrl": ".",
+    "allowJs": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "vite.config.ts", "env.d.ts"],
+  "exclude": ["dist", "node_modules", "unpackage"]
+}

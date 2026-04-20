@@ -1,0 +1,48 @@
+{
+  "easycom": {
+    "autoscan": true,
+    "custom": {
+      "^wd-(.*)": "wot-design-uni/components/wd-$1/wd-$1.vue"
+    }
+  },
+  "pages": [
+    { "path": "pages/overview/index", "style": { "navigationBarTitleText": "概览" } },
+    { "path": "pages/login/index", "style": { "navigationBarTitleText": "登录" } },
+    { "path": "pages/onboarding/index", "style": { "navigationBarTitleText": "完善资料" } },
+    { "path": "pages/store-create/index", "style": { "navigationBarTitleText": "创建门店" } },
+    { "path": "pages/store-join/index", "style": { "navigationBarTitleText": "加入门店" } },
+    { "path": "pages/store-select/index", "style": { "navigationBarTitleText": "选择门店" } },
+    { "path": "pages/entry/index", "style": { "navigationBarTitleText": "Ledger" } },
+    { "path": "pages/reports/index", "style": { "navigationBarTitleText": "报表" } },
+    { "path": "pages/settings/index", "style": { "navigationBarTitleText": "设置" } },
+    { "path": "pages/profile-edit/index", "style": { "navigationBarTitleText": "编辑资料" } },
+    { "path": "pages/settings-shifts/index", "style": { "navigationBarTitleText": "班次管理" } },
+    {
+      "path": "pages/settings-recorders/index",
+      "style": { "navigationBarTitleText": "记账员管理" }
+    },
+    { "path": "pages/settings-team/index", "style": { "navigationBarTitleText": "成员管理" } },
+    { "path": "pages/shift-detail/index", "style": { "navigationBarTitleText": "班次明细" } },
+    { "path": "pages/stock-ledger/index", "style": { "navigationBarTitleText": "运营与流水" } },
+    { "path": "pages/stock-adjust/index", "style": { "navigationBarTitleText": "库存调整" } }
+  ],
+  "tabBar": {
+    "custom": true,
+    "color": "#999999",
+    "selectedColor": "#1a1c1d",
+    "backgroundColor": "#ffffff",
+    "list": [
+      { "pagePath": "pages/overview/index", "text": "概览" },
+      { "pagePath": "pages/entry/index", "text": "录入" },
+      { "pagePath": "pages/reports/index", "text": "报表" },
+      { "pagePath": "pages/settings/index", "text": "设置" }
+    ]
+  },
+  "globalStyle": {
+    "navigationBarBackgroundColor": "#f9f9fb",
+    "navigationBarTitleText": "Ledger",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f9f9fb",
+    "backgroundTextStyle": "dark"
+  }
+}

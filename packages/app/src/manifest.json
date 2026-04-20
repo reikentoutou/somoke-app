@@ -1,0 +1,21 @@
+{
+  "name": "somoke-ledger",
+  "appid": "",
+  "description": "班次销售管理",
+  "versionName": "0.1.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "mp-weixin": {
+    "appid": "wxae3b12ca0aba5a5d",
+    "setting": {
+      "urlCheck": true,
+      "es6": true,
+      "postcss": true,
+      "minified": true
+    },
+    "usingComponents": true,
+    "cloud": true,
+    "lazyCodeLoading": "requiredComponents"
+  },
+  "vueVersion": "3"
+}
