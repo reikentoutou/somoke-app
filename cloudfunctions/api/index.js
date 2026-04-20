@@ -118,52 +118,16 @@ function cloudDateToMs(v) {
   return null;
 }
 
-function withdrawEventMs(row) {
-  var t = cloudDateToMs(row.created_at);
-  if (t != null) return t;
-  var d = row.record_date != null ? String(row.record_date).trim() : '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
-    return new Date(d + 'T12:00:00').getTime();
-  }
-  return null;
-}
-
-/** 当前门店「记账顺序上」最近一条班次记录（按 id 降序） */
-async function fetchLatestShiftRecordForStore(storeId) {
-  try {
-    var q = await db
-      .collection('shift_records')
-      .where({ store_id: storeId })
-      .orderBy('id', 'desc')
-      .limit(1)
-      .get();
-    if (q.data && q.data.length) return q.data[0];
-  } catch (e) {
-    console.warn('[withdrawList] latest shift orderBy id failed', e);
-  }
-  var q2 = await db
-    .collection('shift_records')
-    .where({ store_id: storeId })
-    .limit(400)
-    .get();
-  var arr = (q2.data || []).slice().sort(function (a, b) {
-    return (b.id || 0) - (a.id || 0);
-  });
-  return arr.length ? arr[0] : null;
-}
-
-/**
- * 写入库存流水（store_stock_ledger）
- * @param {number} delta 库存变化量（正为增加）
- */
-async function insertStockLedgerEntry(storeId, userId, eventType, delta, balanceAfter, refRecordId, note) {
-  var lid = await nextSeq('stock_ledger');
+/** 组装流水文档数据（不落库，供事务内外共用） */
+function buildStockLedgerDocData(ledgerId, storeId, userId, eventType, delta, balanceAfter, cashDelta, cashBalanceAfter, refRecordId, note) {
   var data = {
-    id: lid,
+    id: ledgerId,
     store_id: storeId,
     event_type: eventType,
     delta: delta,
     balance_after: balanceAfter,
+    cash_delta: cashDelta || 0,
+    cash_balance_after: cashBalanceAfter || 0,
     note: note != null ? String(note).trim().slice(0, 200) : '',
     created_by: userId,
     created_at: db.serverDate(),
@@ -172,29 +136,60 @@ async function insertStockLedgerEntry(storeId, userId, eventType, delta, balance
   if (!Number.isNaN(rid) && rid > 0) {
     data.ref_record_id = rid;
   }
-  await db.collection('store_stock_ledger').add({ data: data });
+  return data;
 }
 
+/**
+ * 事务中写流水：_id 用确定性字符串（ssl_<id>），保证重试/回放幂等不会产生重复文档。
+ * 需要在外部用 nextSeq('stock_ledger') 预先拿到 ledgerId。
+ */
+async function insertStockLedgerEntryTx(tx, ledgerId, storeId, userId, eventType, delta, balanceAfter, cashDelta, cashBalanceAfter, refRecordId, note) {
+  var docId = 'ssl_' + ledgerId;
+  var data = buildStockLedgerDocData(ledgerId, storeId, userId, eventType, delta, balanceAfter, cashDelta, cashBalanceAfter, refRecordId, note);
+  await tx.collection('store_stock_ledger').doc(docId).set({ data: data });
+}
+
+/**
+ * 事务式自增序列号：
+ * - 若 counters/<name> 不存在：用 set 初始化为 1（并发时依赖事务冲突检测自动重试其中一方）
+ * - 出现 DUPLICATE_KEY / 事务冲突时，外层最多重试 3 次，避免极端首次并发的偶发失败
+ */
 async function nextSeq(name) {
-  return db.runTransaction(async function (transaction) {
-    var coll = transaction.collection('counters');
-    var dref = coll.doc(name);
-    var snap;
+  var lastErr = null;
+  for (var attempt = 0; attempt < 3; attempt++) {
     try {
-      snap = await dref.get();
+      return await db.runTransaction(async function (transaction) {
+        var coll = transaction.collection('counters');
+        var dref = coll.doc(name);
+        var snap;
+        try {
+          snap = await dref.get();
+        } catch (e) {
+          if (!isDocNotFoundErr(e)) throw e;
+          snap = { data: null };
+        }
+        var cur = snap.data && snap.data.seq != null ? snap.data.seq : 0;
+        var next = cur + 1;
+        if (snap.data) {
+          await dref.update({ data: { seq: next } });
+        } else {
+          await dref.set({ data: { seq: next } });
+        }
+        return next;
+      });
     } catch (e) {
-      if (!isDocNotFoundErr(e)) throw e;
-      snap = { data: null };
+      lastErr = e;
+      var msg = String((e && (e.errMsg || e.message)) || '');
+      var isRetryable =
+        msg.indexOf('DUPLICATE') !== -1 ||
+        msg.indexOf('conflict') !== -1 ||
+        msg.indexOf('TRANSACTION') !== -1;
+      if (!isRetryable) break;
+      /** 线性退让，避免和重试者再次抢占 */
+      await new Promise(function (r) { setTimeout(r, 40 * (attempt + 1)); });
     }
-    var cur = snap.data && snap.data.seq != null ? snap.data.seq : 0;
-    var next = cur + 1;
-    if (snap.data) {
-      await dref.update({ data: { seq: next } });
-    } else {
-      await dref.set({ data: { seq: next } });
-    }
-    return next;
-  });
+  }
+  throw lastErr || new Error('nextSeq failed: ' + name);
 }
 
 async function getUserDoc(openid) {
@@ -214,6 +209,30 @@ async function requireUser(openid) {
     return null;
   }
   return u;
+}
+
+/**
+ * 轻量会话校验：对非 login 请求，若客户端带了 token，则要求与 DB 当前 session_token 匹配且未过期。
+ * - 客户端未附带 token 时不阻断（兼容旧版本；OPENID 身份仍然可信，因此该"登录可感知"的控制层并非防伪造）
+ * - 作用：多设备登录时让前一台自动掉线、显式退出后其他 tab 不能继续写
+ */
+async function validateSession(openid, payload, action) {
+  if (action === 'login') return null;
+  var clientToken = payload && payload.token != null ? String(payload.token).trim() : '';
+  if (!clientToken) return null;
+  var u = await getUserDoc(openid);
+  if (!u || u.is_active === 0) {
+    return fail(401, '账号已失效，请重新登录');
+  }
+  var dbToken = u.session_token ? String(u.session_token) : '';
+  if (dbToken && dbToken !== clientToken) {
+    return fail(401, '登录已在其他设备更新，请重新登录');
+  }
+  var expMs = cloudDateToMs(u.token_expire_at);
+  if (expMs != null && expMs < Date.now()) {
+    return fail(401, '登录已过期，请重新登录');
+  }
+  return null;
 }
 
 async function fetchUserStores(userId) {
@@ -383,32 +402,65 @@ async function handleStoreCreate(openid, payload) {
   var unitPrice = payload.unit_price != null ? parseFloat(payload.unit_price) : 0;
   var currency = payload.currency ? String(payload.currency).trim() : 'CNY';
   if (address.length > 256) return fail(400, '地址过长');
-  if (unitPrice < 0) return fail(400, '单价不能为负数');
+  if (Number.isNaN(unitPrice) || unitPrice < 0) return fail(400, '单价不能为负数');
   if (currency.length > 8) return fail(400, '货币代码过长');
 
+  /** 门店创建涉及 4 类集合写入，任一步失败都要回滚之前创建的文档，避免产生"半只门店" */
   var storeId = await nextSeq('store');
+  var storeDocId = 'store_' + storeId;
+  var memberDocId = 'sm_' + storeId + '_' + u.userId;
   var initRecorderNames = [];
   if (u.nickname && String(u.nickname).trim()) {
     initRecorderNames.push(String(u.nickname).trim());
   }
-  await db.collection('stores').add({
-    data: {
-      id: storeId,
-      name: name,
-      address: address,
-      unit_price: unitPrice,
-      current_stock: 0,
-      currency: currency,
-      recorder_names: initRecorderNames,
-      is_active: 1,
-      created_at: db.serverDate(),
-      updated_at: db.serverDate(),
-    },
-  });
-  await db
-    .collection('store_members')
-    .doc('sm_' + storeId + '_' + u.userId)
-    .set({
+
+  var createdStore = false;
+  var createdMember = false;
+  var updatedUser = false;
+  var createdShiftDocIds = [];
+
+  async function rollback() {
+    if (createdShiftDocIds.length) {
+      for (var ci = 0; ci < createdShiftDocIds.length; ci++) {
+        try {
+          await db.collection('shift_configs').doc(createdShiftDocIds[ci]).remove();
+        } catch (e) { /* ignore */ }
+      }
+    }
+    if (updatedUser) {
+      try {
+        await db.collection('users').doc(openid).update({
+          data: { current_store_id: u.current_store_id != null ? u.current_store_id : null },
+        });
+      } catch (e) { /* ignore */ }
+    }
+    if (createdMember) {
+      try { await db.collection('store_members').doc(memberDocId).remove(); } catch (e) { /* ignore */ }
+    }
+    if (createdStore) {
+      try { await db.collection('stores').doc(storeDocId).remove(); } catch (e) { /* ignore */ }
+    }
+  }
+
+  try {
+    await db.collection('stores').doc(storeDocId).set({
+      data: {
+        id: storeId,
+        name: name,
+        address: address,
+        unit_price: unitPrice,
+        current_stock: 0,
+        current_cash: 0,
+        currency: currency,
+        recorder_names: initRecorderNames,
+        is_active: 1,
+        created_at: db.serverDate(),
+        updated_at: db.serverDate(),
+      },
+    });
+    createdStore = true;
+
+    await db.collection('store_members').doc(memberDocId).set({
       data: {
         store_id: storeId,
         user_id: u.userId,
@@ -417,32 +469,53 @@ async function handleStoreCreate(openid, payload) {
         created_at: db.serverDate(),
       },
     });
-  await db.collection('users').doc(openid).update({
-    data: { current_store_id: storeId, updated_at: db.serverDate() },
-  });
+    createdMember = true;
 
-  var defaults = [
-    { name: '早班', start: '07:00:00', end: '13:00:00', icon: 'wb_sunny', ord: 1 },
-    { name: '白1', start: '13:00:00', end: '18:00:00', icon: 'light_mode', ord: 2 },
-    { name: '白2', start: '18:00:00', end: '23:00:00', icon: 'routine', ord: 3 },
-    { name: '夜班', start: '23:00:00', end: '07:00:00', icon: 'dark_mode', ord: 4 },
-  ];
-  for (var d = 0; d < defaults.length; d++) {
-    var scId = await nextSeq('shift_config');
-    await db.collection('shift_configs').add({
-      data: {
-        id: scId,
-        store_id: storeId,
-        name: defaults[d].name,
-        start_time: defaults[d].start,
-        end_time: defaults[d].end,
-        icon: defaults[d].icon,
-        sort_order: defaults[d].ord,
-        is_active: 1,
-        created_at: db.serverDate(),
-      },
+    await db.collection('users').doc(openid).update({
+      data: { current_store_id: storeId, updated_at: db.serverDate() },
     });
+    updatedUser = true;
+
+    var defaults = [
+      { name: '早班', start: '07:00:00', end: '13:00:00', icon: 'wb_sunny', ord: 1 },
+      { name: '白1', start: '13:00:00', end: '18:00:00', icon: 'light_mode', ord: 2 },
+      { name: '白2', start: '18:00:00', end: '23:00:00', icon: 'routine', ord: 3 },
+      { name: '夜班', start: '23:00:00', end: '07:00:00', icon: 'dark_mode', ord: 4 },
+    ];
+    for (var d = 0; d < defaults.length; d++) {
+      var scId = await nextSeq('shift_config');
+      var scDocId = 'sc_' + scId;
+      await db.collection('shift_configs').doc(scDocId).set({
+        data: {
+          id: scId,
+          store_id: storeId,
+          name: defaults[d].name,
+          start_time: defaults[d].start,
+          end_time: defaults[d].end,
+          icon: defaults[d].icon,
+          sort_order: defaults[d].ord,
+          is_active: 1,
+          created_at: db.serverDate(),
+        },
+      });
+      createdShiftDocIds.push(scDocId);
+    }
+  } catch (err) {
+    console.error('[storeCreate] create failed, rolling back', err);
+    await rollback();
+    return fail(500, '门店创建失败，请稍后重试');
   }
+
+  /** 读回真实的 DB 时间，避免客户端显示与 DB 之间的时区/秒级偏差 */
+  var createdAtStr = formatDateTime(new Date());
+  var updatedAtStr = createdAtStr;
+  try {
+    var dbDoc = await db.collection('stores').doc(storeDocId).get();
+    if (dbDoc && dbDoc.data) {
+      createdAtStr = formatLedgerEntryTime(dbDoc.data.created_at) || createdAtStr;
+      updatedAtStr = formatLedgerEntryTime(dbDoc.data.updated_at) || updatedAtStr;
+    }
+  } catch (e) { /* ignore */ }
 
   var row = {
     id: storeId,
@@ -450,10 +523,11 @@ async function handleStoreCreate(openid, payload) {
     address: address,
     unit_price: unitPrice,
     current_stock: 0,
+    current_cash: 0,
     currency: currency,
     is_active: 1,
-    created_at: formatDateTime(new Date()),
-    updated_at: formatDateTime(new Date()),
+    created_at: createdAtStr,
+    updated_at: updatedAtStr,
   };
   return ok({ store: row }, '门店创建成功');
 }
@@ -480,47 +554,77 @@ async function handleStoreJoin(openid, payload) {
   if (normalized.length > 32) return fail(400, '邀请码格式不正确');
   var codeHash = crypto.createHash('sha256').update(normalized).digest('hex');
 
+  /** 先按 code_hash 找到邀请与门店（事务内需要通过 _id 访问） */
   var invQ = await db.collection('store_invites').where({ code_hash: codeHash }).limit(1).get();
   if (!invQ.data.length) return fail(400, '邀请码无效');
-  var inv = invQ.data[0];
-  var inviteDocId = inv._id;
-  var storeId = inv.store_id;
-  var expires = inv.expires_at;
-  var maxUses = inv.max_uses;
-  var used = inv.used_count || 0;
-  var expMs = expires instanceof Date ? expires.getTime() : new Date(expires).getTime();
-  if (expMs < Date.now()) return fail(400, '邀请码已过期');
-  if (used >= maxUses) return fail(400, '邀请码已达使用上限');
+  var inviteDocId = invQ.data[0]._id;
+  var storeId = invQ.data[0].store_id;
 
-  var exist = await db
-    .collection('store_members')
-    .where({ store_id: storeId, user_id: u.userId })
-    .limit(1)
-    .get();
-  if (exist.data.length) return fail(400, '您已是该门店成员');
+  var memberDocId = 'sm_' + storeId + '_' + u.userId;
 
-  await db
-    .collection('store_members')
-    .doc('sm_' + storeId + '_' + u.userId)
-    .set({
-      data: {
-        store_id: storeId,
-        user_id: u.userId,
-        role: 2,
-        is_active: 1,
-        created_at: db.serverDate(),
-      },
+  try {
+    await db.runTransaction(async function (tx) {
+      var invSnap = await tx.collection('store_invites').doc(inviteDocId).get();
+      if (!invSnap || !invSnap.data) {
+        var miss = new Error('INVITE_MISSING');
+        miss._user = { code: 400, msg: '邀请码无效' };
+        throw miss;
+      }
+      var inv = invSnap.data;
+      var expires = inv.expires_at;
+      var maxUses = inv.max_uses;
+      var used = inv.used_count || 0;
+      var expMs = expires instanceof Date
+        ? expires.getTime()
+        : (typeof expires === 'object' && expires && expires._seconds != null
+            ? expires._seconds * 1000
+            : new Date(expires).getTime());
+      if (expMs < Date.now()) {
+        var e1 = new Error('EXPIRED');
+        e1._user = { code: 400, msg: '邀请码已过期' };
+        throw e1;
+      }
+      if (used >= maxUses) {
+        var e2 = new Error('USED_UP');
+        e2._user = { code: 400, msg: '邀请码已达使用上限' };
+        throw e2;
+      }
+
+      /** 通过确定性 _id 检查成员是否已存在：同一 (store, user) 下只会有一条 */
+      try {
+        var memSnap = await tx.collection('store_members').doc(memberDocId).get();
+        if (memSnap && memSnap.data) {
+          var e3 = new Error('ALREADY_MEMBER');
+          e3._user = { code: 400, msg: '您已是该门店成员' };
+          throw e3;
+        }
+      } catch (e) {
+        if (e && e._user) throw e;
+        if (!isDocNotFoundErr(e)) throw e;
+      }
+
+      await tx.collection('store_members').doc(memberDocId).set({
+        data: {
+          store_id: storeId,
+          user_id: u.userId,
+          role: 2,
+          is_active: 1,
+          created_at: db.serverDate(),
+        },
+      });
+      /** 事务内用「读到的 used」做 +1 写入；若并发写入冲突，runTransaction 会整体回滚重试 */
+      await tx.collection('store_invites').doc(inviteDocId).update({
+        data: { used_count: used + 1 },
+      });
+      await tx.collection('users').doc(openid).update({
+        data: { current_store_id: storeId, updated_at: db.serverDate() },
+      });
     });
-  var newUsed = used + 1;
-  if (newUsed > maxUses) {
-    return fail(409, '邀请码已失效，请重新获取');
+  } catch (err) {
+    if (err && err._user) return fail(err._user.code, err._user.msg);
+    console.error('[storeJoin] tx failed', err);
+    return fail(500, '加入失败，请稍后重试');
   }
-  await db.collection('store_invites').doc(inviteDocId).update({
-    data: { used_count: _.inc(1) },
-  });
-  await db.collection('users').doc(openid).update({
-    data: { current_store_id: storeId, updated_at: db.serverDate() },
-  });
 
   var st = await db.collection('stores').where({ id: storeId }).limit(1).get();
   var storeName = st.data[0] ? st.data[0].name : '';
@@ -864,6 +968,26 @@ async function handleGetRecords(openid, payload) {
   );
 }
 
+/** 严校验非负整数：非法则返回 null；空/未填算 0 */
+function parseNonNegInt(raw, maxVal) {
+  if (raw == null || raw === '') return 0;
+  var n = parseInt(raw, 10);
+  if (Number.isNaN(n) || !Number.isFinite(n) || n < 0) return null;
+  if (maxVal != null && n > maxVal) return null;
+  return n;
+}
+
+function parseNonNegFloat(raw, maxVal) {
+  if (raw == null || raw === '') return 0;
+  var n = parseFloat(raw);
+  if (Number.isNaN(n) || !Number.isFinite(n) || n < 0) return null;
+  if (maxVal != null && n > maxVal) return null;
+  return n;
+}
+
+var MAX_QTY = 1000000;
+var MAX_CASH = 1000000000;
+
 async function handleAddRecord(openid, payload) {
   var u = await requireUser(openid);
   if (!u) return fail(401, '未登录或用户无效');
@@ -873,20 +997,25 @@ async function handleAddRecord(openid, payload) {
 
   var recordDate = payload.record_date ? String(payload.record_date).trim() : '';
   var shiftConfigId = parseInt(payload.shift_config_id, 10);
-  var qtyOpening = parseInt(payload.qty_opening, 10) || 0;
-  var qtyClosing = parseInt(payload.qty_closing, 10) || 0;
-  var qtyGift = parseInt(payload.qty_gift, 10) || 0;
-  var soldWechat = parseInt(payload.sold_wechat, 10) || 0;
-  var soldAlipay = parseInt(payload.sold_alipay, 10) || 0;
-  var soldCash = parseInt(payload.sold_cash, 10) || 0;
-  var cashOpening = parseFloat(payload.cash_opening) || 0;
-  var cashClosing = parseFloat(payload.cash_closing) || 0;
+  var qtyOpening = parseNonNegInt(payload.qty_opening, MAX_QTY);
+  var qtyClosing = parseNonNegInt(payload.qty_closing, MAX_QTY);
+  var qtyGift = parseNonNegInt(payload.qty_gift, MAX_QTY);
+  var soldWechat = parseNonNegInt(payload.sold_wechat, MAX_QTY);
+  var soldAlipay = parseNonNegInt(payload.sold_alipay, MAX_QTY);
+  var soldCash = parseNonNegInt(payload.sold_cash, MAX_QTY);
+  var cashOpening = parseNonNegFloat(payload.cash_opening, MAX_CASH);
+  var cashClosing = parseNonNegFloat(payload.cash_closing, MAX_CASH);
+  if ([qtyOpening, qtyClosing, qtyGift, soldWechat, soldAlipay, soldCash].indexOf(null) !== -1) {
+    return fail(400, '件数须为非负整数且不能超过上限');
+  }
+  if (cashOpening === null || cashClosing === null) {
+    return fail(400, '现金金额须为非负数且不能超过上限');
+  }
 
   if (!recordDate || !/^\d{4}-\d{2}-\d{2}$/.test(recordDate)) {
     return fail(400, 'record_date 格式不正确，需要 YYYY-MM-DD');
   }
   if (!shiftConfigId || shiftConfigId <= 0) return fail(400, '请选择有效的班次');
-  if (qtyOpening < 0 || qtyClosing < 0) return fail(400, '上班数量和下班数量不能为负数');
 
   var cfgQ = await db
     .collection('shift_configs')
@@ -897,6 +1026,17 @@ async function handleAddRecord(openid, payload) {
 
   var stQ = await db.collection('stores').where({ id: storeId }).limit(1).get();
   if (!stQ.data.length) return fail(500, '门店信息不存在');
+  var storeDoc = stQ.data[0];
+  var storeDbId = storeDoc._id;
+
+  var recName = payload.recorder_name != null ? String(payload.recorder_name).trim() : '';
+  if (!recName || recName.length > 32) {
+    return fail(400, '请选择或填写记账姓名（1～32 字）');
+  }
+  var whitelist = Array.isArray(storeDoc.recorder_names) ? storeDoc.recorder_names : [];
+  if (whitelist.length > 0 && whitelist.indexOf(recName) < 0) {
+    return fail(400, '记账姓名不在本店名单中，请在录入页重新选择或联系管理员维护名单');
+  }
 
   var qtySold = qtyOpening - qtyClosing - qtyGift;
   if (qtySold < 0) qtySold = 0;
@@ -906,26 +1046,6 @@ async function handleAddRecord(openid, payload) {
   var totalRevenue = Math.round(unitPrice * paymentQty * 100) / 100;
   var recordMonth = monthFromDateStr(recordDate);
 
-  var dup = await db
-    .collection('shift_records')
-    .where({
-      store_id: storeId,
-      shift_config_id: shiftConfigId,
-      record_date: recordDate,
-    })
-    .limit(1)
-    .get();
-  if (dup.data.length) return fail(400, '该日期该班次已有记录，不能重复录入');
-
-  var recName = payload.recorder_name != null ? String(payload.recorder_name).trim() : '';
-  if (!recName || recName.length > 32) {
-    return fail(400, '请选择或填写记账姓名（1～32 字）');
-  }
-  var whitelist = Array.isArray(stQ.data[0].recorder_names) ? stQ.data[0].recorder_names : [];
-  if (whitelist.length > 0 && whitelist.indexOf(recName) < 0) {
-    return fail(400, '记账姓名不在本店名单中，请在录入页重新选择或联系管理员维护名单');
-  }
-
   /**
    * 与库存管理 current_stock 对齐：
    * - 支付渠道售出 + 赠送；若未填支付但填了盘点，则用 max(盘点售出, 支付合计)+赠送，避免只填上班/下班时不扣库。
@@ -933,72 +1053,100 @@ async function handleAddRecord(openid, payload) {
   var stockBase = Math.max(qtySold, paymentQty);
   var stockDeduct = stockBase + qtyGift;
   if (stockDeduct < 0) stockDeduct = 0;
+  var cashDelta = soldCash * unitPrice;
 
-  var storeDoc = stQ.data[0];
-  var storeDbId = storeDoc._id;
-  var curStock = storeDoc.current_stock != null ? storeDoc.current_stock : 0;
-  var nextStock = curStock - stockDeduct;
-  if (nextStock < 0) nextStock = 0;
+  /** 确定性 _id：同一 (store, date, shift) 组合下任何并发写入都会命中同一文档，天然防重复录入 */
+  var shiftRecDocId = 'sr_' + storeId + '_' + recordDate + '_' + shiftConfigId;
 
+  /** 预分配业务 id（nextSeq 自身事务，不与下面外层事务嵌套） */
   var recordId = await nextSeq('shift_record');
-  var addRes = await db.collection('shift_records').add({
-    data: {
-      id: recordId,
-      store_id: storeId,
-      shift_config_id: shiftConfigId,
-      recorder_id: u.userId,
-      recorder_name: recName,
-      record_date: recordDate,
-      record_month: recordMonth,
-      qty_opening: qtyOpening,
-      qty_closing: qtyClosing,
-      qty_gift: qtyGift,
-      sold_wechat: soldWechat,
-      sold_alipay: soldAlipay,
-      sold_cash: soldCash,
-      cash_opening: cashOpening,
-      cash_closing: cashClosing,
-      qty_sold: qtySold,
-      total_revenue: totalRevenue,
-      unit_price: unitPrice,
-      stock_deduct: stockDeduct,
-      created_at: db.serverDate(),
-      updated_at: db.serverDate(),
-    },
-  });
+  var needLedger = stockDeduct > 0 || cashDelta !== 0;
+  var ledgerId = needLedger ? await nextSeq('stock_ledger') : null;
 
-  if (stockDeduct > 0) {
-    try {
-      await db.collection('stores').doc(storeDbId).update({
-        data: { current_stock: nextStock, updated_at: db.serverDate() },
-      });
-      await insertStockLedgerEntry(
-        storeId,
-        u.userId,
-        'record_add',
-        -stockDeduct,
-        nextStock,
-        recordId,
-        '记账出库'
-      );
-    } catch (err) {
-      console.error('[addRecord] stock or ledger failed', err);
+  var txResult;
+  try {
+    txResult = await db.runTransaction(async function (tx) {
+      /** 同 (店/日/班) 唯一性：事务内检查，保证不会有两个记录并存 */
       try {
-        if (addRes && addRes._id) {
-          await db.collection('shift_records').doc(addRes._id).remove();
+        var existing = await tx.collection('shift_records').doc(shiftRecDocId).get();
+        if (existing && existing.data) {
+          var err = new Error('DUP_RECORD');
+          err._user = { code: 400, msg: '该日期该班次已有记录，不能重复录入' };
+          throw err;
         }
-      } catch (e2) {
-        console.error('[addRecord] rollback record failed', e2);
+      } catch (e) {
+        if (e && e._user) throw e;
+        if (!isDocNotFoundErr(e)) throw e;
       }
-      try {
-        await db.collection('stores').doc(storeDbId).update({
-          data: { current_stock: curStock, updated_at: db.serverDate() },
+
+      var stSnap = await tx.collection('stores').doc(storeDbId).get();
+      if (!stSnap || !stSnap.data) {
+        var e2 = new Error('STORE_MISSING');
+        e2._user = { code: 500, msg: '门店信息不存在' };
+        throw e2;
+      }
+      var live = stSnap.data;
+      var liveStock = live.current_stock != null ? live.current_stock : 0;
+      var liveCash = live.current_cash != null ? live.current_cash : 0;
+      var nextStockTx = liveStock - stockDeduct;
+      if (nextStockTx < 0) nextStockTx = 0;
+      var nextCashTx = liveCash + cashDelta;
+
+      await tx.collection('shift_records').doc(shiftRecDocId).set({
+        data: {
+          id: recordId,
+          store_id: storeId,
+          shift_config_id: shiftConfigId,
+          recorder_id: u.userId,
+          recorder_name: recName,
+          record_date: recordDate,
+          record_month: recordMonth,
+          qty_opening: qtyOpening,
+          qty_closing: qtyClosing,
+          qty_gift: qtyGift,
+          sold_wechat: soldWechat,
+          sold_alipay: soldAlipay,
+          sold_cash: soldCash,
+          cash_opening: cashOpening,
+          cash_closing: cashClosing,
+          qty_sold: qtySold,
+          total_revenue: totalRevenue,
+          unit_price: unitPrice,
+          stock_deduct: stockDeduct,
+          created_at: db.serverDate(),
+          updated_at: db.serverDate(),
+        },
+      });
+
+      if (needLedger) {
+        await tx.collection('stores').doc(storeDbId).update({
+          data: {
+            current_stock: nextStockTx,
+            current_cash: nextCashTx,
+            updated_at: db.serverDate(),
+          },
         });
-      } catch (e3) {
-        console.error('[addRecord] rollback stock failed', e3);
+        await insertStockLedgerEntryTx(
+          tx,
+          ledgerId,
+          storeId,
+          u.userId,
+          'record_add',
+          -stockDeduct,
+          nextStockTx,
+          cashDelta,
+          nextCashTx,
+          recordId,
+          '记账'
+        );
       }
-      throw err;
-    }
+
+      return { nextStock: nextStockTx, nextCash: nextCashTx };
+    });
+  } catch (err) {
+    if (err && err._user) return fail(err._user.code, err._user.msg);
+    console.error('[addRecord] tx failed', err);
+    return fail(500, '记账失败，已自动回滚，请稍后重试');
   }
 
   return ok(
@@ -1020,7 +1168,8 @@ async function handleAddRecord(openid, payload) {
       unit_price: unitPrice,
       total_revenue: totalRevenue,
       stock_deduct: stockDeduct,
-      current_stock: stockDeduct > 0 ? nextStock : curStock,
+      current_stock: txResult.nextStock,
+      current_cash: txResult.nextCash,
     },
     '记录提交成功'
   );
@@ -1040,13 +1189,21 @@ async function handleRecorderNameAdd(openid, payload) {
   var stQ = await db.collection('stores').where({ id: storeId }).limit(1).get();
   if (!stQ.data.length) return fail(404, '门店不存在');
   var doc = stQ.data[0];
-  var names = Array.isArray(doc.recorder_names) ? doc.recorder_names.slice() : [];
-  if (names.indexOf(nm) >= 0) return fail(400, '该姓名已在列表中');
-  if (names.length >= 50) return fail(400, '最多添加 50 个记账姓名');
-  names.push(nm);
+  var existing = Array.isArray(doc.recorder_names) ? doc.recorder_names : [];
+  if (existing.indexOf(nm) >= 0) return fail(400, '该姓名已在列表中');
+  if (existing.length >= 50) return fail(400, '最多添加 50 个记账姓名');
+  /**
+   * 用 _.push 让数据库端做并发安全的数组追加，避免两位管理员同时添加造成覆盖丢失。
+   * 重复性检查仍走读取路径，并发极端情况下仍由客户端"已存在"提示弥补。
+   */
   await db.collection('stores').doc(doc._id).update({
-    data: { recorder_names: names, updated_at: db.serverDate() },
+    data: { recorder_names: _.push([nm]), updated_at: db.serverDate() },
   });
+  /** 读回一次以保证返回给客户端的是最新的数组快照 */
+  var after = await db.collection('stores').doc(doc._id).get();
+  var names = after && after.data && Array.isArray(after.data.recorder_names)
+    ? after.data.recorder_names
+    : existing.concat([nm]);
   return ok({ recorder_names: names }, '已添加');
 }
 
@@ -1064,13 +1221,16 @@ async function handleRecorderNameDelete(openid, payload) {
   var stQ = await db.collection('stores').where({ id: storeId }).limit(1).get();
   if (!stQ.data.length) return fail(404, '门店不存在');
   var doc = stQ.data[0];
-  var names = Array.isArray(doc.recorder_names) ? doc.recorder_names.slice() : [];
-  var idx = names.indexOf(nm);
-  if (idx < 0) return fail(404, '列表中无此姓名');
-  names.splice(idx, 1);
+  var existing = Array.isArray(doc.recorder_names) ? doc.recorder_names : [];
+  if (existing.indexOf(nm) < 0) return fail(404, '列表中无此姓名');
+  /** _.pull 按值原子删除，避免读改写窗口内其他管理员的新增被覆盖丢失 */
   await db.collection('stores').doc(doc._id).update({
-    data: { recorder_names: names, updated_at: db.serverDate() },
+    data: { recorder_names: _.pull(nm), updated_at: db.serverDate() },
   });
+  var after = await db.collection('stores').doc(doc._id).get();
+  var names = after && after.data && Array.isArray(after.data.recorder_names)
+    ? after.data.recorder_names
+    : existing.filter(function (x) { return x !== nm; });
   return ok({ recorder_names: names }, '已删除');
 }
 
@@ -1089,6 +1249,7 @@ async function handleStoreDetail(openid) {
     name: s.name,
     unit_price: s.unit_price,
     current_stock: s.current_stock != null ? s.current_stock : 0,
+    current_cash: s.current_cash != null ? s.current_cash : 0,
     currency: s.currency || 'CNY',
     address: s.address || '',
     recorder_names: rnames,
@@ -1136,44 +1297,126 @@ async function handleGetStoreMembers(openid) {
   return ok({ members: members });
 }
 
-async function handleStoreRestock(openid, payload) {
+async function handleOpsAction(openid, payload) {
   var u = await requireUser(openid);
   if (!u) return fail(401, '未登录或用户无效');
   var ctx = await requireActiveStoreId(openid, u);
   if (ctx.err) return ctx.err;
   var storeId = ctx.storeId;
   var role = await requireStoreMembership(u.userId, storeId);
-  if (role !== 1) return fail(403, '仅门店管理员可补货');
-  var qty = parseInt(payload.qty, 10);
-  if (!qty || qty <= 0 || qty > 100000) return fail(400, '补货数量须在 1～100000 之间');
+  if (role !== 1) return fail(403, '仅门店管理员可执行此操作');
+
+  var actionType = payload.action_type; // 'restock' | 'withdraw' | 'adjust_stock' | 'adjust_cash'
+  var valStock = parseNonNegInt(payload.val_stock, MAX_QTY);
+  var valCash = parseNonNegFloat(payload.val_cash, MAX_CASH);
+  if (valStock === null) return fail(400, '库存数值须为非负整数且不能超过上限');
+  if (valCash === null) return fail(400, '金额须为非负数且不能超过上限');
+  var note = payload.note != null ? String(payload.note).trim().slice(0, 200) : '';
+
+  /** 先取 stores 文档的 _id（事务内需要通过 _id 读写） */
   var stQ = await db.collection('stores').where({ id: storeId }).limit(1).get();
   if (!stQ.data.length) return fail(404, '门店不存在');
-  var doc = stQ.data[0];
-  var cur = doc.current_stock != null ? doc.current_stock : 0;
-  var nextStock = cur + qty;
-  await db
-    .collection('stores')
-    .doc(doc._id)
-    .update({
-      data: { current_stock: nextStock, updated_at: db.serverDate() },
-    });
-  try {
-    await insertStockLedgerEntry(storeId, u.userId, 'restock', qty, nextStock, null, '补货 +' + qty);
-  } catch (err) {
-    console.error('[storeRestock] ledger failed', err);
-    try {
-      await db
-        .collection('stores')
-        .doc(doc._id)
-        .update({
-          data: { current_stock: cur, updated_at: db.serverDate() },
-        });
-    } catch (e2) {
-      console.error('[storeRestock] rollback stock failed', e2);
-    }
-    return fail(500, '补货已回滚：流水写入失败，请检查 store_stock_ledger 与 counters.stock_ledger');
+  var storeDbId = stQ.data[0]._id;
+
+  /** 允许的 action 与默认备注；事务外完成基础规则检查，避免无意义的 nextSeq 浪费 */
+  if (['restock', 'withdraw', 'adjust_stock', 'adjust_cash'].indexOf(actionType) < 0) {
+    return fail(400, '未知的操作类型');
   }
-  return ok({ current_stock: nextStock, added: qty });
+  if (actionType === 'restock' && valStock <= 0) return fail(400, '补货数量须大于 0');
+  if (actionType === 'withdraw' && valCash <= 0) return fail(400, '取现金额须大于 0');
+
+  var ledgerId = await nextSeq('stock_ledger');
+
+  var txResult;
+  try {
+    txResult = await db.runTransaction(async function (tx) {
+      var stSnap = await tx.collection('stores').doc(storeDbId).get();
+      if (!stSnap || !stSnap.data) {
+        var miss = new Error('STORE_MISSING');
+        miss._user = { code: 404, msg: '门店不存在' };
+        throw miss;
+      }
+      var liveStock = stSnap.data.current_stock != null ? stSnap.data.current_stock : 0;
+      var liveCash = stSnap.data.current_cash != null ? stSnap.data.current_cash : 0;
+
+      var nextStock = liveStock;
+      var nextCash = liveCash;
+      var deltaStock = 0;
+      var deltaCash = 0;
+      var defaultNote = '';
+      var eventType = actionType;
+
+      if (actionType === 'restock') {
+        /** 进货货款走店外资金，不记入门店现金流；val_cash 忽略 */
+        deltaStock = valStock;
+        nextStock = liveStock + deltaStock;
+        defaultNote = '补货 +' + valStock;
+      } else if (actionType === 'withdraw') {
+        if (valCash > liveCash) {
+          var ne = new Error('CASH_INSUFFICIENT');
+          ne._user = { code: 400, msg: '取现金额超过当前现金余额' };
+          throw ne;
+        }
+        deltaCash = -valCash;
+        nextCash = liveCash + deltaCash;
+        defaultNote = '取现 -' + valCash;
+      } else if (actionType === 'adjust_stock') {
+        deltaStock = valStock - liveStock;
+        nextStock = valStock;
+        defaultNote = '库存校准';
+        if (deltaStock === 0) {
+          return { nextStock: liveStock, nextCash: liveCash, deltaStock: 0, deltaCash: 0, skipped: true };
+        }
+      } else if (actionType === 'adjust_cash') {
+        deltaCash = valCash - liveCash;
+        nextCash = valCash;
+        defaultNote = '现金校准';
+        if (deltaCash === 0) {
+          return { nextStock: liveStock, nextCash: liveCash, deltaStock: 0, deltaCash: 0, skipped: true };
+        }
+      }
+
+      await tx.collection('stores').doc(storeDbId).update({
+        data: {
+          current_stock: nextStock,
+          current_cash: nextCash,
+          updated_at: db.serverDate(),
+        },
+      });
+      await insertStockLedgerEntryTx(
+        tx,
+        ledgerId,
+        storeId,
+        u.userId,
+        eventType,
+        deltaStock,
+        nextStock,
+        deltaCash,
+        nextCash,
+        null,
+        note || defaultNote
+      );
+
+      return { nextStock: nextStock, nextCash: nextCash, deltaStock: deltaStock, deltaCash: deltaCash, skipped: false };
+    });
+  } catch (err) {
+    if (err && err._user) return fail(err._user.code, err._user.msg);
+    console.error('[handleOpsAction] tx failed', err);
+    return fail(500, '操作失败，已自动回滚，请稍后重试');
+  }
+
+  if (txResult.skipped) {
+    return ok(
+      { current_stock: txResult.nextStock, current_cash: txResult.nextCash },
+      actionType === 'adjust_stock' ? '库存未变化' : '现金未变化'
+    );
+  }
+  return ok({
+    current_stock: txResult.nextStock,
+    current_cash: txResult.nextCash,
+    delta_stock: txResult.deltaStock,
+    delta_cash: txResult.deltaCash,
+  }, '操作成功');
 }
 
 async function handleStockLedgerList(openid, payload) {
@@ -1186,11 +1429,20 @@ async function handleStockLedgerList(openid, payload) {
   if (mem == null) return fail(403, '无权查看该门店');
   var lim = parseInt(payload && payload.limit, 10) || 50;
   if (lim < 1 || lim > 100) lim = 50;
+  /**
+   * cursor：上一页最后一条流水的 id（前端直接透传），按 id 严格小于它继续取下一页。
+   * 这是"按 id 降序游标"的标准翻页，不会因新增流水造成错位。
+   */
+  var cursor = payload && payload.cursor != null ? parseInt(payload.cursor, 10) : NaN;
+  var whereClause = { store_id: storeId };
+  if (!Number.isNaN(cursor) && cursor > 0) {
+    whereClause.id = _.lt(cursor);
+  }
   var rows;
   try {
     var q = await db
       .collection('store_stock_ledger')
-      .where({ store_id: storeId })
+      .where(whereClause)
       .orderBy('id', 'desc')
       .limit(lim)
       .get();
@@ -1205,20 +1457,97 @@ async function handleStockLedgerList(openid, payload) {
     var arr = (q2.data || []).slice().sort(function (a, b) {
       return (b.id || 0) - (a.id || 0);
     });
+    if (!Number.isNaN(cursor) && cursor > 0) {
+      arr = arr.filter(function (r) { return (r.id || 0) < cursor; });
+    }
     rows = arr.slice(0, lim);
   }
+  /**
+   * 批量 join 三件事，让每条流水直接带上「谁在什么班次做了什么」，
+   * 便于管理员回头按班次排查库存/现金对不上的原因。
+   * 1) ref_record_id → shift_records 得到 (record_date, shift_config_id)
+   * 2) shift_config_id → shift_configs 得到班次名
+   * 3) created_by → users 得到操作人昵称
+   */
+  var refIdSet = {};
+  for (var ri = 0; ri < rows.length; ri++) {
+    var rid = rows[ri].ref_record_id;
+    if (rid != null && !Number.isNaN(parseInt(rid, 10))) {
+      refIdSet[parseInt(rid, 10)] = true;
+    }
+  }
+  var refIds = Object.keys(refIdSet).map(function (x) { return parseInt(x, 10); });
+  var recByRef = {};
+  var cfgIdSet = {};
+  for (var rc = 0; rc < refIds.length; rc += 10) {
+    var rchunk = refIds.slice(rc, rc + 10);
+    if (!rchunk.length) break;
+    var rq = await db.collection('shift_records').where({ id: _.in(rchunk) }).get();
+    for (var ri2 = 0; ri2 < rq.data.length; ri2++) {
+      var srow = rq.data[ri2];
+      recByRef[srow.id] = srow;
+      if (srow.shift_config_id != null) cfgIdSet[srow.shift_config_id] = true;
+    }
+  }
+  var cfgIds = Object.keys(cfgIdSet).map(function (x) { return parseInt(x, 10); });
+  var cfgMap = {};
+  for (var cc = 0; cc < cfgIds.length; cc += 10) {
+    var cchunk = cfgIds.slice(cc, cc + 10);
+    if (!cchunk.length) break;
+    var cq = await db.collection('shift_configs').where({ id: _.in(cchunk) }).get();
+    for (var ci2 = 0; ci2 < cq.data.length; ci2++) {
+      cfgMap[cq.data[ci2].id] = cq.data[ci2];
+    }
+  }
+  var opIdSet = {};
+  for (var oi = 0; oi < rows.length; oi++) {
+    var cb = rows[oi].created_by;
+    if (cb != null && !Number.isNaN(parseInt(cb, 10))) {
+      opIdSet[parseInt(cb, 10)] = true;
+    }
+  }
+  var opIds = Object.keys(opIdSet).map(function (x) { return parseInt(x, 10); });
+  var opMap = {};
+  for (var oc = 0; oc < opIds.length; oc += 10) {
+    var ochunk = opIds.slice(oc, oc + 10);
+    if (!ochunk.length) break;
+    var oq = await db.collection('users').where({ userId: _.in(ochunk) }).get();
+    for (var oi2 = 0; oi2 < oq.data.length; oi2++) {
+      opMap[oq.data[oi2].userId] = oq.data[oi2].nickname || '';
+    }
+  }
+
   var items = rows.map(function (row) {
+    var shiftDate = '';
+    var shiftName = '';
+    var recName = '';
+    if (row.ref_record_id != null) {
+      var linked = recByRef[parseInt(row.ref_record_id, 10)];
+      if (linked) {
+        shiftDate = linked.record_date || '';
+        var cfg = cfgMap[linked.shift_config_id];
+        shiftName = cfg && cfg.name ? cfg.name : '';
+        recName = linked.recorder_name || '';
+      }
+    }
     return {
       id: row.id,
       event_type: row.event_type,
-      delta: row.delta,
+      delta: row.delta || 0,
       balance_after: row.balance_after != null ? row.balance_after : 0,
+      cash_delta: row.cash_delta || 0,
+      cash_balance_after: row.cash_balance_after != null ? row.cash_balance_after : 0,
       ref_record_id: row.ref_record_id != null ? row.ref_record_id : null,
       note: row.note || '',
       time_display: formatLedgerEntryTime(row.created_at),
+      shift_date: shiftDate,
+      shift_name: shiftName,
+      recorder_name: recName,
+      operator_name: opMap[row.created_by] || '',
     };
   });
-  return ok({ items: items }, 'success');
+  var nextCursor = rows.length === lim ? (rows[rows.length - 1].id || null) : null;
+  return ok({ items: items, next_cursor: nextCursor, has_more: !!nextCursor }, 'success');
 }
 
 async function handleStockAdjust(openid, payload) {
@@ -1229,181 +1558,62 @@ async function handleStockAdjust(openid, payload) {
   var storeId = ctx.storeId;
   var role = await requireStoreMembership(u.userId, storeId);
   if (role !== 1) return fail(403, '仅门店管理员可校准库存');
-  var target = parseInt(payload && payload.target_stock, 10);
-  if (Number.isNaN(target) || target < 0 || target > 10000000) {
-    return fail(400, '实盘库存须为 0～10000000 的整数');
+  var target = parseNonNegInt(payload && payload.target_stock, MAX_QTY);
+  if (target === null) {
+    return fail(400, '实盘库存须为非负整数且不能超过上限');
   }
   var noteIn = payload && payload.note != null ? String(payload.note).trim().slice(0, 200) : '';
+
   var stQ = await db.collection('stores').where({ id: storeId }).limit(1).get();
   if (!stQ.data.length) return fail(404, '门店不存在');
-  var doc = stQ.data[0];
-  var cur = doc.current_stock != null ? doc.current_stock : 0;
-  var delta = target - cur;
-  if (delta === 0) {
-    return ok({ current_stock: cur, skipped: true, delta: 0 }, '库存未变化');
-  }
-  await db
-    .collection('stores')
-    .doc(doc._id)
-    .update({
-      data: { current_stock: target, updated_at: db.serverDate() },
-    });
+  var storeDbId = stQ.data[0]._id;
+
+  var ledgerId = await nextSeq('stock_ledger');
   var noteOut = noteIn || '库存校准';
+
+  var txResult;
   try {
-    await insertStockLedgerEntry(storeId, u.userId, 'adjust', delta, target, null, noteOut);
-  } catch (err) {
-    console.error('[stockAdjust] ledger failed', err);
-    try {
-      await db
-        .collection('stores')
-        .doc(doc._id)
-        .update({
-          data: { current_stock: cur, updated_at: db.serverDate() },
-        });
-    } catch (e2) {
-      console.error('[stockAdjust] rollback stock failed', e2);
-    }
-    return fail(500, '校准已回滚：流水写入失败，请检查 store_stock_ledger 与 counters.stock_ledger');
-  }
-  return ok({ current_stock: target, delta: delta }, '校准成功');
-}
-
-async function handleWithdrawList(openid) {
-  var u = await requireUser(openid);
-  if (!u) return fail(401, '未登录或用户无效');
-  var ctx = await requireActiveStoreId(openid, u);
-  if (ctx.err) return ctx.err;
-  var storeId = ctx.storeId;
-  var role = await requireStoreMembership(u.userId, storeId);
-  if (role == null) return fail(403, '无权查看该门店');
-
-  var latestShift = await fetchLatestShiftRecordForStore(storeId);
-  var anchorMs = null;
-  var anchorDisplay = '';
-  var latestId = null;
-  var latestDate = '';
-  var latestCashClosing = null;
-  if (latestShift) {
-    latestId = latestShift.id != null ? latestShift.id : null;
-    latestDate = latestShift.record_date != null ? String(latestShift.record_date).trim() : '';
-    var cc = latestShift.cash_closing;
-    latestCashClosing = cc != null && cc !== '' ? parseFloat(cc) : null;
-    if (latestCashClosing != null && Number.isNaN(latestCashClosing)) latestCashClosing = null;
-    var uMs = cloudDateToMs(latestShift.updated_at);
-    var cMs = cloudDateToMs(latestShift.created_at);
-    if (uMs != null && cMs != null) {
-      anchorMs = Math.max(uMs, cMs);
-    } else {
-      anchorMs = uMs != null ? uMs : cMs;
-    }
-    if (anchorMs == null && latestDate && /^\d{4}-\d{2}-\d{2}$/.test(latestDate)) {
-      anchorMs = new Date(latestDate + 'T23:59:59').getTime();
-    }
-    anchorDisplay = formatLedgerEntryTime(latestShift.updated_at) || formatLedgerEntryTime(latestShift.created_at) || latestDate || '';
-  }
-
-  var r = await db
-    .collection('store_withdrawals')
-    .where({ store_id: storeId })
-    .limit(200)
-    .get();
-  var rows = r.data.slice().sort(function (a, b) {
-    var da = a.record_date || '';
-    var db = b.record_date || '';
-    if (da !== db) return db.localeCompare(da);
-    return (b.id || 0) - (a.id || 0);
-  });
-  var total = 0;
-  for (var i = 0; i < rows.length; i++) {
-    var aj = rows[i].amount_jpy != null ? parseInt(rows[i].amount_jpy, 10) : 0;
-    if (!Number.isNaN(aj) && aj > 0) total += aj;
-  }
-  var out = rows.slice(0, 100).map(function (row) {
-    return {
-      id: row.id,
-      record_date: row.record_date || '',
-      amount_jpy: row.amount_jpy != null ? row.amount_jpy : 0,
-    };
-  });
-
-  var withdrawSumAfterAnchor = null;
-  if (anchorMs != null) {
-    var sub = 0;
-    for (var j = 0; j < rows.length; j++) {
-      var wms = withdrawEventMs(rows[j]);
-      if (wms == null) continue;
-      if (wms > anchorMs) {
-        var wj = rows[j].amount_jpy != null ? parseInt(rows[j].amount_jpy, 10) : 0;
-        if (!Number.isNaN(wj) && wj > 0) sub += wj;
+    txResult = await db.runTransaction(async function (tx) {
+      var snap = await tx.collection('stores').doc(storeDbId).get();
+      if (!snap || !snap.data) {
+        var miss = new Error('STORE_MISSING');
+        miss._user = { code: 404, msg: '门店不存在' };
+        throw miss;
       }
-    }
-    withdrawSumAfterAnchor = sub;
+      var cur = snap.data.current_stock != null ? snap.data.current_stock : 0;
+      var curCashForLedger = snap.data.current_cash != null ? snap.data.current_cash : 0;
+      var delta = target - cur;
+      if (delta === 0) {
+        return { skipped: true, current_stock: cur, delta: 0 };
+      }
+      await tx.collection('stores').doc(storeDbId).update({
+        data: { current_stock: target, updated_at: db.serverDate() },
+      });
+      await insertStockLedgerEntryTx(
+        tx,
+        ledgerId,
+        storeId,
+        u.userId,
+        'adjust_stock',
+        delta,
+        target,
+        0,
+        curCashForLedger,
+        null,
+        noteOut
+      );
+      return { skipped: false, current_stock: target, delta: delta };
+    });
+  } catch (err) {
+    if (err && err._user) return fail(err._user.code, err._user.msg);
+    console.error('[stockAdjust] tx failed', err);
+    return fail(500, '校准失败，已自动回滚，请稍后重试');
   }
 
-  var reconcileHint = '';
-  if (!latestShift) {
-    reconcileHint =
-      '暂无班次记账，无法按「最近一条班次」的时间锚点汇总之后的取现。以下为全部取现记录；累计金额仍为列表合计。';
-  } else {
-    reconcileHint =
-      '「下班现金」来自最近一条班次记账的登记值；「该锚点之后的取现合计」以取现单的创建时间（无则按取现日期中午）与班次更新时间较晚者比较，仅统计严格晚于锚点的取现。无系统创建时间的旧数据可能未计入该合计，请与实物钱箱核对。';
+  if (txResult.skipped) {
+    return ok({ current_stock: txResult.current_stock, skipped: true, delta: 0 }, '库存未变化');
   }
-
-  return ok(
-    {
-      records: out,
-      total_jpy: total,
-      latest_shift_record_id: latestId,
-      latest_shift_record_date: latestDate,
-      latest_cash_closing: latestCashClosing,
-      anchor_time_display: anchorDisplay,
-      withdraw_sum_after_anchor_jpy: withdrawSumAfterAnchor,
-      reconcile_hint: reconcileHint,
-    },
-    'success'
-  );
-}
-
-async function handleWithdrawAdd(openid, payload) {
-  var u = await requireUser(openid);
-  if (!u) return fail(401, '未登录或用户无效');
-  var ctx = await requireActiveStoreId(openid, u);
-  if (ctx.err) return ctx.err;
-  var storeId = ctx.storeId;
-  var role = await requireStoreMembership(u.userId, storeId);
-  if (role !== 1) return fail(403, '仅门店管理员可登记取现');
-
-  var amt =
-    payload.amount_jpy != null
-      ? parseInt(payload.amount_jpy, 10)
-      : parseInt(payload.amount, 10);
-  if (Number.isNaN(amt) || amt <= 0) return fail(400, '请输入大于 0 的取现金额（円）');
-  if (amt > 999999999) return fail(400, '金额过大');
-
-  var recordDate = payload.record_date != null ? String(payload.record_date).trim() : '';
-  if (!recordDate || !/^\d{4}-\d{2}-\d{2}$/.test(recordDate)) {
-    return fail(400, 'record_date 须为 YYYY-MM-DD');
-  }
-
-  var wid = await nextSeq('store_withdrawal');
-  await db.collection('store_withdrawals').add({
-    data: {
-      id: wid,
-      store_id: storeId,
-      amount_jpy: amt,
-      record_date: recordDate,
-      operator_id: u.userId,
-      created_at: db.serverDate(),
-    },
-  });
-  return ok(
-    {
-      id: wid,
-      record_date: recordDate,
-      amount_jpy: amt,
-    },
-    '已记录取现'
-  );
+  return ok({ current_stock: txResult.current_stock, delta: txResult.delta }, '校准成功');
 }
 
 async function handleUpdateProfile(openid, payload) {
@@ -1535,20 +1745,25 @@ async function handleUpdateRecord(openid, payload) {
 
   var recordDate = payload.record_date ? String(payload.record_date).trim() : '';
   var shiftConfigId = parseInt(payload.shift_config_id, 10);
-  var qtyOpening = parseInt(payload.qty_opening, 10) || 0;
-  var qtyClosing = parseInt(payload.qty_closing, 10) || 0;
-  var qtyGift = parseInt(payload.qty_gift, 10) || 0;
-  var soldWechat = parseInt(payload.sold_wechat, 10) || 0;
-  var soldAlipay = parseInt(payload.sold_alipay, 10) || 0;
-  var soldCash = parseInt(payload.sold_cash, 10) || 0;
-  var cashOpening = parseFloat(payload.cash_opening) || 0;
-  var cashClosing = parseFloat(payload.cash_closing) || 0;
+  var qtyOpening = parseNonNegInt(payload.qty_opening, MAX_QTY);
+  var qtyClosing = parseNonNegInt(payload.qty_closing, MAX_QTY);
+  var qtyGift = parseNonNegInt(payload.qty_gift, MAX_QTY);
+  var soldWechat = parseNonNegInt(payload.sold_wechat, MAX_QTY);
+  var soldAlipay = parseNonNegInt(payload.sold_alipay, MAX_QTY);
+  var soldCash = parseNonNegInt(payload.sold_cash, MAX_QTY);
+  var cashOpening = parseNonNegFloat(payload.cash_opening, MAX_CASH);
+  var cashClosing = parseNonNegFloat(payload.cash_closing, MAX_CASH);
+  if ([qtyOpening, qtyClosing, qtyGift, soldWechat, soldAlipay, soldCash].indexOf(null) !== -1) {
+    return fail(400, '件数须为非负整数且不能超过上限');
+  }
+  if (cashOpening === null || cashClosing === null) {
+    return fail(400, '现金金额须为非负数且不能超过上限');
+  }
 
   if (!recordDate || !/^\d{4}-\d{2}-\d{2}$/.test(recordDate)) {
     return fail(400, 'record_date 格式不正确');
   }
   if (!shiftConfigId || shiftConfigId <= 0) return fail(400, '请选择有效的班次');
-  if (qtyOpening < 0 || qtyClosing < 0) return fail(400, '上班数量和下班数量不能为负数');
 
   var cfgQ = await db
     .collection('shift_configs')
@@ -1559,6 +1774,8 @@ async function handleUpdateRecord(openid, payload) {
 
   var stQ = await db.collection('stores').where({ id: storeId }).limit(1).get();
   if (!stQ.data.length) return fail(500, '门店信息不存在');
+  var storeDbId = stQ.data[0]._id;
+  var whitelist = Array.isArray(stQ.data[0].recorder_names) ? stQ.data[0].recorder_names : [];
 
   var dupQ = await db
     .collection('shift_records')
@@ -1578,7 +1795,6 @@ async function handleUpdateRecord(openid, payload) {
   if (!recName || recName.length > 32) {
     return fail(400, '请选择或填写记账姓名（1～32 字）');
   }
-  var whitelist = Array.isArray(stQ.data[0].recorder_names) ? stQ.data[0].recorder_names : [];
   if (whitelist.length > 0 && whitelist.indexOf(recName) < 0) {
     return fail(400, '记账姓名不在本店名单中');
   }
@@ -1587,7 +1803,14 @@ async function handleUpdateRecord(openid, payload) {
   if (qtySold < 0) qtySold = 0;
   var paymentQty = soldWechat + soldAlipay + soldCash;
   if (paymentQty < 0) paymentQty = 0;
-  var unitPrice = ITEM_UNIT_PRICE_JPY;
+  /**
+   * 修改记录时使用原记录的 unit_price：
+   * - 不因后续单价调整而让历史记录「金额被重估」
+   * - 保证 oldCashDelta 与 newCashDelta 使用同一单价，对 current_cash 的增减自洽
+   */
+  var unitPrice = (oldRow.unit_price != null && !Number.isNaN(parseFloat(oldRow.unit_price)))
+    ? parseFloat(oldRow.unit_price)
+    : ITEM_UNIT_PRICE_JPY;
   var totalRevenue = Math.round(unitPrice * paymentQty * 100) / 100;
   var recordMonth = monthFromDateStr(recordDate);
 
@@ -1607,90 +1830,76 @@ async function handleUpdateRecord(openid, payload) {
     soldAlipay,
     soldCash
   );
+  var oldCashDelta = (oldRow.sold_cash || 0) * unitPrice;
+  var newCashDelta = soldCash * unitPrice;
+  var stockDelta = oldDeduct - newDeduct;
+  var cashDelta = newCashDelta - oldCashDelta;
+  var needLedger = stockDelta !== 0 || cashDelta !== 0;
 
-  var storeDoc = stQ.data[0];
-  var storeDbId = storeDoc._id;
-  var curStock = storeDoc.current_stock != null ? storeDoc.current_stock : 0;
-  var nextStock = curStock + oldDeduct - newDeduct;
-  if (nextStock < 0) nextStock = 0;
+  var ledgerId = needLedger ? await nextSeq('stock_ledger') : null;
 
-  await db.collection('shift_records').doc(oldDocId).update({
-    data: {
-      shift_config_id: shiftConfigId,
-      recorder_name: recName,
-      record_date: recordDate,
-      record_month: recordMonth,
-      qty_opening: qtyOpening,
-      qty_closing: qtyClosing,
-      qty_gift: qtyGift,
-      sold_wechat: soldWechat,
-      sold_alipay: soldAlipay,
-      sold_cash: soldCash,
-      cash_opening: cashOpening,
-      cash_closing: cashClosing,
-      qty_sold: qtySold,
-      total_revenue: totalRevenue,
-      unit_price: unitPrice,
-      stock_deduct: newDeduct,
-      updated_at: db.serverDate(),
-    },
-  });
+  var txResult;
+  try {
+    txResult = await db.runTransaction(async function (tx) {
+      var stSnap = await tx.collection('stores').doc(storeDbId).get();
+      if (!stSnap || !stSnap.data) {
+        var miss = new Error('STORE_MISSING');
+        miss._user = { code: 500, msg: '门店信息不存在' };
+        throw miss;
+      }
+      var liveStock = stSnap.data.current_stock != null ? stSnap.data.current_stock : 0;
+      var liveCash = stSnap.data.current_cash != null ? stSnap.data.current_cash : 0;
+      var nextStock = liveStock + stockDelta;
+      if (nextStock < 0) nextStock = 0;
+      var nextCash = liveCash + cashDelta;
 
-  if (oldDeduct !== newDeduct) {
-    await db.collection('stores').doc(storeDbId).update({
-      data: { current_stock: nextStock, updated_at: db.serverDate() },
+      await tx.collection('shift_records').doc(oldDocId).update({
+        data: {
+          shift_config_id: shiftConfigId,
+          recorder_name: recName,
+          record_date: recordDate,
+          record_month: recordMonth,
+          qty_opening: qtyOpening,
+          qty_closing: qtyClosing,
+          qty_gift: qtyGift,
+          sold_wechat: soldWechat,
+          sold_alipay: soldAlipay,
+          sold_cash: soldCash,
+          cash_opening: cashOpening,
+          cash_closing: cashClosing,
+          qty_sold: qtySold,
+          total_revenue: totalRevenue,
+          unit_price: unitPrice,
+          stock_deduct: newDeduct,
+          updated_at: db.serverDate(),
+        },
+      });
+
+      if (needLedger) {
+        await tx.collection('stores').doc(storeDbId).update({
+          data: { current_stock: nextStock, current_cash: nextCash, updated_at: db.serverDate() },
+        });
+        await insertStockLedgerEntryTx(
+          tx,
+          ledgerId,
+          storeId,
+          u.userId,
+          'record_update',
+          stockDelta,
+          nextStock,
+          cashDelta,
+          nextCash,
+          recordId,
+          '修改记账'
+        );
+      }
+
+      return { nextStock: nextStock, nextCash: nextCash };
     });
-    var stockDelta = oldDeduct - newDeduct;
-    try {
-      await insertStockLedgerEntry(
-        storeId,
-        u.userId,
-        'record_update',
-        stockDelta,
-        nextStock,
-        recordId,
-        '修改记账'
-      );
-    } catch (err) {
-      console.error('[updateRecord] ledger failed, rolling back', err);
-      try {
-        await db.collection('stores').doc(storeDbId).update({
-          data: { current_stock: curStock, updated_at: db.serverDate() },
-        });
-      } catch (e2) {
-        console.error('[updateRecord] rollback stock failed', e2);
-      }
-      try {
-        var oldMonth =
-          oldRow.record_month != null && String(oldRow.record_month).trim()
-            ? String(oldRow.record_month).trim()
-            : monthFromDateStr(oldRow.record_date || recordDate);
-        await db.collection('shift_records').doc(oldDocId).update({
-          data: {
-            shift_config_id: oldRow.shift_config_id,
-            recorder_name: oldRow.recorder_name,
-            record_date: oldRow.record_date,
-            record_month: oldMonth,
-            qty_opening: oldRow.qty_opening,
-            qty_closing: oldRow.qty_closing,
-            qty_gift: oldRow.qty_gift,
-            sold_wechat: oldRow.sold_wechat,
-            sold_alipay: oldRow.sold_alipay,
-            sold_cash: oldRow.sold_cash,
-            cash_opening: oldRow.cash_opening,
-            cash_closing: oldRow.cash_closing,
-            qty_sold: oldRow.qty_sold,
-            total_revenue: oldRow.total_revenue,
-            unit_price: oldRow.unit_price,
-            stock_deduct: oldRow.stock_deduct != null ? oldRow.stock_deduct : oldDeduct,
-            updated_at: db.serverDate(),
-          },
-        });
-      } catch (e3) {
-        console.error('[updateRecord] rollback record failed', e3);
-      }
-      return fail(500, '保存失败：流水未写入，已恢复原记录与库存');
-    }
+  } catch (err) {
+    if (err && err._user) return fail(err._user.code, err._user.msg);
+    console.error('[updateRecord] tx failed', err);
+    return fail(500, '保存失败，已自动回滚，请稍后重试');
   }
 
   return ok(
@@ -1698,7 +1907,8 @@ async function handleUpdateRecord(openid, payload) {
       id: recordId,
       record_date: recordDate,
       stock_deduct: newDeduct,
-      current_stock: oldDeduct !== newDeduct ? nextStock : curStock,
+      current_stock: txResult.nextStock,
+      current_cash: txResult.nextCash,
     },
     '已保存修改'
   );
@@ -1800,12 +2010,13 @@ exports.main = async function (event, context) {
       update_record: 'updateRecord',
       store_member_remove: 'storeMemberRemove',
       store_member_set_role: 'storeMemberSetRole',
-      get_record: 'getRecord',
-      update_record: 'updateRecord',
     };
     if (ACTION_ALIASES[action]) {
       action = ACTION_ALIASES[action];
     }
+
+    var sessionErr = await validateSession(OPENID, payload, action);
+    if (sessionErr) return sessionErr;
 
     switch (action) {
       case 'login':
@@ -1846,23 +2057,20 @@ exports.main = async function (event, context) {
         return await handleStoreMemberRemove(OPENID, payload);
       case 'storeMemberSetRole':
         return await handleStoreMemberSetRole(OPENID, payload);
-      case 'storeRestock':
-        return await handleStoreRestock(OPENID, payload);
-      case 'withdrawList':
-        return await handleWithdrawList(OPENID);
-      case 'withdrawAdd':
-        return await handleWithdrawAdd(OPENID, payload);
       case 'updateProfile':
         return await handleUpdateProfile(OPENID, payload);
       case 'stockLedgerList':
         return await handleStockLedgerList(OPENID, payload);
       case 'stockAdjust':
         return await handleStockAdjust(OPENID, payload);
+      case 'opsAction':
+        return await handleOpsAction(OPENID, payload);
       default:
-        return fail(400, '未知 action: ' + action);
+        return fail(400, '请求参数不正确');
     }
   } catch (e) {
     console.error(e);
-    return fail(500, e.message || '服务器错误');
+    /** 对外返回泛化信息，内部错误细节仅在日志中保留，避免通过文案泄露实现 */
+    return fail(500, '服务器错误，请稍后重试');
   }
 };
