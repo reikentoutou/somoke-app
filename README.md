@@ -6,11 +6,11 @@
 
 ## 技术栈
 
-| 部分 | 说明 |
-|------|------|
-| 小程序 | `miniprogram/` — WXML / WXSS / JS，自定义 TabBar |
-| 后端 | `cloudfunctions/api/` — Node.js + `wx-server-sdk` |
-| 数据 | 云开发文档数据库（集合见 [docs/CLOUD_SETUP.md](docs/CLOUD_SETUP.md)） |
+| 部分   | 说明                                                                  |
+| ------ | --------------------------------------------------------------------- |
+| 小程序 | `miniprogram/` — WXML / WXSS / JS，自定义 TabBar                      |
+| 后端   | `cloudfunctions/api/` — Node.js + `wx-server-sdk`                     |
+| 数据   | 云开发文档数据库（集合见 [docs/CLOUD_SETUP.md](docs/CLOUD_SETUP.md)） |
 
 ## 仓库结构
 
@@ -42,8 +42,8 @@ somoke-app/
 ## 快速开始
 
 1. 用微信开发者工具打开**仓库根目录**（读取根目录 `project.config.json`）。
-2. `miniprogram/app.js` 中 `wx.cloud.init` 使用 **`wx.cloud.DYNAMIC_CURRENT_ENV`**，与工具当前所选云环境一致；切换环境时在开发者工具里改云环境即可。
-3. 右键 **`cloudfunctions/api` → Upload and Deploy: Cloud install dependencies**（上传并部署：云端安装依赖）。
+2. `miniprogram/app.js` 中 `wx.cloud.init` 使用 `**wx.cloud.DYNAMIC_CURRENT_ENV`\*\*，与工具当前所选云环境一致；切换环境时在开发者工具里改云环境即可。
+3. 右键 `**cloudfunctions/api` → Upload and Deploy: Cloud install dependencies\*\*（上传并部署：云端安装依赖）。
 4. 按 [docs/CLOUD_SETUP.md](docs/CLOUD_SETUP.md) **创建全部集合**并配置权限与建议索引。
 
 接口说明：[docs/API_CLOUD.md](docs/API_CLOUD.md)。

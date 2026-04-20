@@ -16,3 +16,15 @@ node_modules/
 # 日志与临时文件
 *.log
 *.zip
+
+# Vite/uni-app 产物
+packages/**/dist/
+packages/**/unpackage/
+packages/**/.uni-storage/
+*.tsbuildinfo
+
+# 本地 AI 工具与第三方参考代码（不进仓库）
+third-party/
+.claude/
+.cursor/skills/
+
