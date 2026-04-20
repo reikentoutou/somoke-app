@@ -2,51 +2,97 @@
 
 **GitHub：** [https://github.com/reikentoutou/somoke-app](https://github.com/reikentoutou/somoke-app)
 
-微信小程序（原生）+ **微信云开发**：云函数 `api` + 云文档数据库。按**班次**录入与统计门店销售（微信 / 支付宝 / 现金等）。
+微信小程序（**uni-app + Vue 3 + TypeScript**）+ **微信云开发**：云函数 `api` + 云文档数据库。按**班次**录入与统计门店销售（微信 / 支付宝 / 现金等）。
 
 ## 技术栈
 
-| 部分   | 说明                                                                  |
-| ------ | --------------------------------------------------------------------- |
-| 小程序 | `miniprogram/` — WXML / WXSS / JS，自定义 TabBar                      |
-| 后端   | `cloudfunctions/api/` — Node.js + `wx-server-sdk`                     |
-| 数据   | 云开发文档数据库（集合见 [docs/CLOUD_SETUP.md](docs/CLOUD_SETUP.md)） |
+| 部分     | 说明                                                                                                               |
+| -------- | ------------------------------------------------------------------------------------------------------------------ |
+| 小程序   | [`packages/app/`](packages/app/) — uni-app、Vue 3 `<script setup>`、Pinia、自定义 tabBar（原生 `custom-tab-bar/`） |
+| 类型契约 | [`packages/shared/`](packages/shared/) — 与云函数对齐的 TS 类型与常量                                              |
+| 后端     | [`cloudfunctions/api/`](cloudfunctions/api/) — Node.js + `wx-server-sdk`                                           |
+| 数据     | 云开发文档数据库（集合见 [docs/CLOUD_SETUP.md](docs/CLOUD_SETUP.md)）                                              |
 
 ## 仓库结构
 
 ```
 somoke-app/
-├── miniprogram/           # 小程序（微信开发者工具打开本仓库根目录）
-│   ├── app.* / pages/ / custom-tab-bar/ / utils/
-│   │   └── utils/ledgerRecordForm.js   # 录入与详情「改账」共用的营业额/软校验逻辑
-│   └── project.private.config.json   # 本地设置（可不入库）
+├── packages/
+│   ├── app/                 # 小程序源码与构建配置（Vite + @dcloudio/vite-plugin-uni）
+│   │   ├── src/             # 页面、组件、composables、stores、api
+│   │   └── dist/
+│   │       ├── dev/mp-weixin/    # 开发构建（pnpm dev）
+│   │       └── build/mp-weixin/  # 生产构建（pnpm build），用于上传体验版/正式版
+│   └── shared/              # 前后端共享类型
 ├── cloudfunctions/
-│   └── api/               # 业务云函数（上传部署）
+│   └── api/                 # 业务云函数（上传部署）
 ├── database/
-│   └── import/            # 如 counters 初始文档（见 CLOUD_SETUP）
+│   └── import/              # 如 counters 初始文档（见 CLOUD_SETUP）
 ├── docs/
-│   ├── CLOUD_SETUP.md     # 云开发部署、集合、权限与索引
-│   ├── API_CLOUD.md       # 云函数 action 与响应约定
-│   └── AGENT_PROMPTS.md   # 多会话开局 Prompt
-├── project.config.json    # 工程：miniprogramRoot、cloudfunctionRoot、appid
+│   ├── CLOUD_SETUP.md       # 云开发部署、集合、权限与索引
+│   ├── API_CLOUD.md         # 云函数 action 与响应约定
+│   └── AGENT_PROMPTS.md     # 多会话开局 Prompt
+├── package.json             # workspace 根：pnpm scripts、husky、lint-staged
+├── pnpm-workspace.yaml
 └── README.md
 ```
 
 ## 功能要点（与文档同步）
 
-- **登录 / 多门店**：`needs_onboarding`、`needs_store_selection` 与 `utils/store.js` 会话逻辑一致。
-- **录入与改账**：Tab「录入」支持新增与修改；**班次详情页**内可「修改本条记录」并调用 `updateRecord`（无需再跳 Tab 录入）。
-- **库存**：`stores.current_stock`；记账提交按规则扣减；**修改记录**时服务端按旧/新扣减差额回算；管理员在设置中 **补货**（`storeRestock`）。**库存流水**（全员在设置中查看）与**库存校准**（管理员将系统库存对齐实盘）见设置 → 运营控制 → 库存管理区域。
+- **登录 / 多门店**：`needs_onboarding`、`needs_store_selection`；会话见 `packages/app/src/stores/auth.ts`。
+- **录入与改账**：Tab「录入」与班次详情内改账共用 `LedgerRecordForm`；更新走 `updateRecord` 全量必填字段。
+- **库存**：`stores.current_stock`；记账扣减、改账差额回算；**库存流水**与**库存校准**见设置 → 库存相关入口。
 - **营业额**：与云函数内单价常量一致（当前为 **3000 円/件** × 微信+支付宝+现金件数）；详见 [docs/API_CLOUD.md](docs/API_CLOUD.md)。
 
 ## 快速开始
 
-1. 用微信开发者工具打开**仓库根目录**（读取根目录 `project.config.json`）。
-2. `miniprogram/app.js` 中 `wx.cloud.init` 使用 `**wx.cloud.DYNAMIC_CURRENT_ENV`\*\*，与工具当前所选云环境一致；切换环境时在开发者工具里改云环境即可。
-3. 右键 `**cloudfunctions/api` → Upload and Deploy: Cloud install dependencies\*\*（上传并部署：云端安装依赖）。
-4. 按 [docs/CLOUD_SETUP.md](docs/CLOUD_SETUP.md) **创建全部集合**并配置权限与建议索引。
+### 1. 依赖
+
+```bash
+pnpm install
+```
+
+### 2. 本地开发（微信小程序）
+
+```bash
+pnpm dev
+```
+
+等价于 `pnpm -C packages/app dev:mp-weixin`。构建完成后，用**微信开发者工具**打开目录：
+
+`packages/app/dist/dev/mp-weixin/`
+
+该目录下的 `project.config.json` 在每次构建结束时会写入 **`cloudfunctionRoot`**（相对路径指向仓库根目录的 `cloudfunctions/`），可在工具里直接右键上传云函数。
+
+### 3. 生产构建与上传
+
+```bash
+pnpm build
+```
+
+打开 `packages/app/dist/build/mp-weixin/`，在开发者工具中**上传**为体验版或提交审核。
+
+### 4. 云函数部署
+
+1. 按上一步打开 **dev** 或 **build** 产物目录（须含正确 `appid`）。
+2. 展开 **`cloudfunctions/api`**（由 `cloudfunctionRoot` 解析到仓库内目录）。
+3. 右键 **`api` → Upload and Deploy: Cloud install dependencies**。
+
+亦可使用 [微信云开发控制台](https://console.cloud.tencent.com/tcb) 上传同名函数（以当前团队流程为准）。
+
+### 5. 数据库
+
+按 [docs/CLOUD_SETUP.md](docs/CLOUD_SETUP.md) **创建全部集合**并配置权限与建议索引。
 
 接口说明：[docs/API_CLOUD.md](docs/API_CLOUD.md)。
+
+### 6. 质量检查（可选）
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm lint
+```
 
 ## 多会话协作（Cursor）
 
@@ -55,10 +101,11 @@ somoke-app/
 
 ## 常见问题
 
-- **合法域名**：业务走 `callFunction`，一般**不必**再配自建 API 的 request 合法域名。
+- **合法域名**：业务走 `wx.cloud.callFunction`，一般**不必**再配自建 API 的 request 合法域名。
 - **Canary 基础库**：调试异常时可换**稳定版**基础库并对照真机。
-- **列表渲染**：`wx:for` 绑定数组，使用 `{{list || []}}`，避免 `null` 报错。
-- **仅改小程序**：若未改 `cloudfunctions/api/`，一般**无需**重新上传云函数。
+- **列表渲染**：`v-for` / `wx:for` 绑定须为数组；避免对 `null` 迭代（真机可能报 `object null is not iterable`）。
+- **改云函数后**：须重新 **Upload and Deploy**，否则客户端仍是旧逻辑。
+- **产物路径**：不要手工改 `packages/app/dist/**/project.config.json` 里的关键字段后指望保留；应改 [packages/app/vite.config.ts](packages/app/vite.config.ts) 中的构建后处理逻辑，再重新 `pnpm dev` / `pnpm build`。
 
 ## 开源协议
 

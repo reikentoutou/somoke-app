@@ -1,14 +1,14 @@
 ---
-description: 微信小程序（WXML/WXSS/JS、请求与登录流）约定
-globs: miniprogram/**/*
+description: 微信小程序（uni-app + Vue3 + TS）约定
+globs: packages/app/**/*.{vue,ts}
 alwaysApply: false
 ---
 
 # 小程序会话规则（Somoke Ledger）
 
-- **范围**：只改 `miniprogram/`（含 `custom-tab-bar/`、`utils/`、`pages/**`）。不要改 `api/`、`database/`。
-- **请求**：统一使用 `utils/request.js` 的 `get` / `post`（内部为 `wx.cloud.callFunction` 调云函数 `api`）；勿改回自建域名 `wx.request`，除非用户明确要求。
-- **401 / 未登录**：Tab 页在 `onShow` 使用 `utils/auth.js` 的 `redirectToLoginIfNeeded()`；登录页为 `pages/login/login`。
-- **列表与数据**：`wx:for` 绑定必须是数组；模板中使用 `{{arr || []}}`，JS 里用 `Array.isArray` 再 `map`，避免 `null` 导致「object null is not iterable」。
-- **样式与文案**：延续 `app.wxss` 与各页现有风格；用户可见文案用**简体中文**。
-- **对接后端**：字段名与 PHP 返回的 JSON 一致；接口未定时用注释 `TODO` 标明依赖，勿写死假数据结构长期留在生产路径。
+- **范围**：只改 [`packages/app/`](/packages/app/)（含 `src/pages/**`、`src/components/**`、`src/composables/**`、`src/stores/**`、`src/api/**`）。不要改 `cloudfunctions/`（除非用户明确要求联调云函数）。
+- **请求**：统一通过 [`packages/app/src/api/client.ts`](/packages/app/src/api/client.ts) 的 `rpc` / `rpcCached` 调云函数 `api`；勿改回自建域名 `wx.request`，除非用户明确要求。
+- **401 / 未登录**：需登录页在 `onShow` 使用 [`useSession`](/packages/app/src/composables/useSession.ts) 的 `ensureReady()`；登录页为 `pages/login/index`。
+- **列表与数据**：`v-for` 绑定必须是数组；`wx:for` 场景避免对 `null` 迭代。 composable 里先 `Array.isArray` 再处理。
+- **样式与文案**：延续现有 ink / 灰阶色板；用户可见文案用**简体中文**。不使用 CSS 渐变色（项目约定）。
+- **对接后端**：字段名与 [`packages/shared`](/packages/shared/) 及 [docs/API_CLOUD.md](/docs/API_CLOUD.md) 一致；不确定时在文档或类型中补齐，勿长期写死假数据。

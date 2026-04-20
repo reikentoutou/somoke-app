@@ -1,7 +1,7 @@
 import { defineConfig, type Plugin } from 'vite'
 import uni from '@dcloudio/vite-plugin-uni'
 import { resolve } from 'node:path'
-import { copyFile, mkdir, readdir, stat } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 
 /**
@@ -51,8 +51,29 @@ function copyCustomTabBarPlugin(): Plugin {
   }
 }
 
+/**
+ * uni 生成的 mp-weixin `project.config.json` 默认不带 `cloudfunctionRoot`，
+ * 开发者工具里看不到仓库中的 `cloudfunctions/`。从产物根向上 5 级到 monorepo 根
+ *（mp-weixin → build|dev → dist → app → packages → repo），再进 `cloudfunctions`。
+ */
+function patchMpProjectCloudRootPlugin(): Plugin {
+  return {
+    name: 'somoke:patch-mp-project-cloud-root',
+    apply: () => UNI_PLATFORM === 'mp-weixin',
+    async writeBundle() {
+      const sub = process.env.NODE_ENV === 'production' ? 'build' : 'dev'
+      const cfgPath = resolve(__dirname, 'dist', sub, UNI_PLATFORM, 'project.config.json')
+      if (!existsSync(cfgPath)) return
+      const raw = await readFile(cfgPath, 'utf8')
+      const j = JSON.parse(raw) as Record<string, unknown>
+      j.cloudfunctionRoot = '../../../../../cloudfunctions'
+      await writeFile(cfgPath, `${JSON.stringify(j, null, 2)}\n`, 'utf8')
+    }
+  }
+}
+
 export default defineConfig({
-  plugins: [uni(), copyCustomTabBarPlugin()],
+  plugins: [uni(), copyCustomTabBarPlugin(), patchMpProjectCloudRootPlugin()],
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
