@@ -1,6 +1,16 @@
 var storeUtil = require('./store');
 
 /**
+ * 当前用户：优先取 globalData，其次本地缓存；无论如何返回对象（可能为空）
+ * 页面/组件普遍需要，这里集中实现避免 `app.globalData.userInfo || wx.getStorageSync(...) || {}` 的散落写法
+ */
+function getCurrentUserInfo() {
+  var app = typeof getApp === 'function' ? getApp() : null;
+  var fromGlobal = app && app.globalData ? app.globalData.userInfo : null;
+  return fromGlobal || wx.getStorageSync('userInfo') || {};
+}
+
+/**
  * 未登录时跳转登录页（非 Tab 页），避免「退出后又静默登录」的错觉
  */
 function redirectToLoginIfNeeded() {
@@ -36,6 +46,7 @@ function redirectToStoreSelectIfNeeded() {
 }
 
 module.exports = {
+  getCurrentUserInfo: getCurrentUserInfo,
   redirectToLoginIfNeeded: redirectToLoginIfNeeded,
   redirectToOnboardingIfNeeded: redirectToOnboardingIfNeeded,
   redirectToStoreSelectIfNeeded: redirectToStoreSelectIfNeeded

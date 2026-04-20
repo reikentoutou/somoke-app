@@ -31,7 +31,8 @@ Page({
     fromSettings: false,
     loading: false,
     joinInviteCode: '',
-    joinSubmitting: false
+    joinSubmitting: false,
+    switching: false
   },
 
   onLoad(options) {
@@ -95,6 +96,7 @@ Page({
   },
 
   onPickStore(e) {
+    if (this.data.switching) return;
     var id = e.currentTarget.dataset.id;
     var sid = parseInt(id, 10);
     if (Number.isNaN(sid) || sid <= 0) {
@@ -106,6 +108,7 @@ Page({
       return;
     }
     var self = this;
+    self.setData({ switching: true });
     wx.showLoading({ title: '切换中', mask: true });
     request
       .post('/store_switch.php', { store_id: sid })
@@ -126,7 +129,8 @@ Page({
         wx.showToast({ title: (err && err.message) || '切换失败', icon: 'none' });
       })
       .then(function () {
-        wx.hideLoading();
+        try { wx.hideLoading(); } catch (e2) { /* ignore */ }
+        self.setData({ switching: false });
       });
   },
 

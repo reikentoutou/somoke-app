@@ -1,4 +1,5 @@
 const request = require('../../utils/request');
+const apiCached = require('../../utils/apiCached');
 const util = require('../../utils/util');
 const auth = require('../../utils/auth');
 const storeUtil = require('../../utils/store');
@@ -12,8 +13,7 @@ function formatInt(n) {
 
 function recorderInitial(name) {
   const s = (name || '').trim();
-  if (!s) return '';
-  return s.charAt(0);
+  return s ? s.charAt(0) : '';
 }
 
 function emptyDetailState() {
@@ -36,30 +36,7 @@ function emptyDetailState() {
     cashAmountStr: '0.00',
     cashOpeningStr: '0.00',
     cashClosingStr: '0.00',
-    unitPrice: 0,
-    /** 内联编辑（与录入页字段对齐） */
-    shiftConfigs: [],
-    selectedShiftIndex: 0,
-    shiftPickerLabel: '请选择',
-    recorderNameList: [''],
-    recorderNameIndex: 0,
-    recorderPickerDisplay: '',
-    recordDate: '',
-    qtyOpening: '',
-    qtyClosing: '',
-    qtyGift: '',
-    soldWechatStr: '',
-    soldAlipayStr: '',
-    soldCashStr: '',
-    cashOpening: '',
-    cashClosing: '',
-    qtySold: 0,
-    paymentSoldTotal: 0,
-    totalRevenueJpy: '0',
-    unitPriceLabel: String(ledgerForm.ITEM_UNIT_PRICE_JPY),
-    softWarnings: [],
-    hasSoftWarnings: false,
-    editSubmitting: false
+    unitPrice: 0
   };
 }
 
@@ -97,16 +74,24 @@ function mapRowToPageData(row) {
 Page({
   data: emptyDetailState(),
 
+  /**
+   * 会话复核：非 onLoad 场景（如后台回前台）也需要复查登录/引导/门店，
+   * 避免在已失效会话下继续用旧 id 拉取数据。
+   */
+  _ensureSession() {
+    if (!auth.redirectToLoginIfNeeded()) return false;
+    if (!auth.redirectToOnboardingIfNeeded()) return false;
+    if (!auth.redirectToStoreSelectIfNeeded()) return false;
+    return true;
+  },
+
+  onShow() {
+    if (!this._ensureSession()) return;
+  },
+
   onLoad(options) {
-    if (!auth.redirectToLoginIfNeeded()) {
-      return;
-    }
-    if (!auth.redirectToOnboardingIfNeeded()) {
-      return;
-    }
-    if (!auth.redirectToStoreSelectIfNeeded()) {
-      return;
-    }
+    if (!this._ensureSession()) return;
+
     const idRaw = options.id;
     const id = idRaw != null && idRaw !== '' ? parseInt(String(idRaw), 10) : NaN;
     const date =
@@ -127,18 +112,17 @@ Page({
   },
 
   computeCanEdit(row) {
-    var app = getApp();
-    var u = app.globalData.userInfo || wx.getStorageSync('userInfo') || {};
-    var myId =
+    const u = auth.getCurrentUserInfo();
+    const myId =
       u.id != null ? parseInt(u.id, 10) : u.userId != null ? parseInt(u.userId, 10) : NaN;
-    var rid = row.recorder_id != null ? parseInt(row.recorder_id, 10) : NaN;
+    const rid = row.recorder_id != null ? parseInt(row.recorder_id, 10) : NaN;
     if (storeUtil.isBossInCurrentStore(u)) return true;
     if (!Number.isNaN(myId) && myId > 0 && !Number.isNaN(rid) && rid === myId) return true;
     return false;
   },
 
   loadRecord(id, date) {
-    var self = this;
+    const self = this;
     wx.showLoading({ title: '加载中', mask: true });
 
     function applyRow(row) {
@@ -149,34 +133,30 @@ Page({
         return;
       }
       self._editSourceRow = row;
-      self.setData(Object.assign(emptyDetailState(), mapRowToPageData(row), { canEdit: self.computeCanEdit(row) }));
+      self.setData(
+        Object.assign(emptyDetailState(), mapRowToPageData(row), {
+          canEdit: self.computeCanEdit(row)
+        })
+      );
     }
 
     request
       .get('/get_record.php', { id: id })
       .then(function (data) {
-        var rec = data && data.record;
+        const rec = data && data.record;
         if (rec) {
           applyRow(rec);
           return;
         }
         return request.get('/get_records.php', { date: date }).then(function (data2) {
-          var raw = data2 && data2.records;
-          var list = Array.isArray(raw) ? raw : [];
-          var row = list.find(function (r) {
-            return parseInt(r.id, 10) === id;
-          });
-          applyRow(row);
+          const list = Array.isArray(data2 && data2.records) ? data2.records : [];
+          applyRow(list.find(function (r) { return parseInt(r.id, 10) === id; }));
         });
       })
       .catch(function () {
         return request.get('/get_records.php', { date: date }).then(function (data2) {
-          var raw = data2 && data2.records;
-          var list = Array.isArray(raw) ? raw : [];
-          var row = list.find(function (r) {
-            return parseInt(r.id, 10) === id;
-          });
-          applyRow(row);
+          const list = Array.isArray(data2 && data2.records) ? data2.records : [];
+          applyRow(list.find(function (r) { return parseInt(r.id, 10) === id; }));
         });
       })
       .catch(function () {
@@ -184,26 +164,22 @@ Page({
         self.setData(emptyDetailState());
       })
       .then(function () {
-        try {
-          wx.hideLoading();
-        } catch (e) {
-          /* ignore */
-        }
+        try { wx.hideLoading(); } catch (e) { /* ignore */ }
       });
   },
 
   onTapEditRecord() {
-    var self = this;
-    var row = this._editSourceRow;
+    const row = this._editSourceRow;
     if (!this._recordId || !row) {
       wx.showToast({ title: '记录未加载完成', icon: 'none' });
       return;
     }
+    const self = this;
     wx.showLoading({ title: '加载中', mask: true });
-    Promise.all([request.get('/get_shifts.php', {}), request.get('/store_detail.php', {})])
-      .then(function (results) {
-        var shiftConfigs = Array.isArray(results[0]) ? results[0] : [];
-        var detail = results[1] || {};
+    apiCached
+      .getShifts()
+      .then(function (data) {
+        const shiftConfigs = Array.isArray(data) ? data : [];
         if (!shiftConfigs.length) {
           wx.showToast({ title: '请先在设置中配置班次', icon: 'none' });
           return;
@@ -217,223 +193,35 @@ Page({
           });
           return;
         }
-        var app = getApp();
-        var u = app.globalData.userInfo || wx.getStorageSync('userInfo') || {};
-        var sid = storeUtil.getStoreIdFromUserInfo(u);
-        var key = sid ? 'ledger_recorder_' + sid : 'ledger_recorder';
-        var saved = wx.getStorageSync(key) || '';
-        var rawNames = detail && detail.recorder_names;
-        var list = [];
-        if (Array.isArray(rawNames)) {
-          for (var j = 0; j < rawNames.length; j++) {
-            var one = rawNames[j];
-            if (one == null) continue;
-            var t = String(one).trim();
-            if (t) list.push(t);
-          }
-        }
-        var nm = row.recorder_name ? String(row.recorder_name).trim() : '';
-        if (nm && list.indexOf(nm) < 0) {
-          list.unshift(nm);
-        }
-        if (!list.length) {
-          var nick = (u && u.nickname && String(u.nickname).trim()) || '员工';
-          list = [nick];
-        }
-        var ridx = 0;
-        for (var i = 0; i < list.length; i++) {
-          if (list[i] === saved) {
-            ridx = i;
-            break;
-          }
-        }
-        if (nm) {
-          var hit = list.indexOf(nm);
-          if (hit >= 0) ridx = hit;
-        }
-        var ix = ledgerForm.shiftIndexForConfigId(shiftConfigs, row.shift_config_id);
-        var label =
-          shiftConfigs[ix] && shiftConfigs[ix].name
-            ? shiftConfigs[ix].name
-            : row.shift_name || '请选择';
-        var picked = list[ridx] || list[0] || '';
-        var formData = {
-          editing: true,
-          shiftConfigs: shiftConfigs,
-          selectedShiftIndex: ix,
-          shiftPickerLabel: label,
-          recorderNameList: list,
-          recorderNameIndex: ridx,
-          recorderPickerDisplay: picked || nm,
-          recordDate: row.record_date || '',
-          qtyOpening: row.qty_opening != null ? String(row.qty_opening) : '',
-          qtyClosing: row.qty_closing != null ? String(row.qty_closing) : '',
-          qtyGift: row.qty_gift != null ? String(row.qty_gift) : '',
-          soldWechatStr: row.sold_wechat != null ? String(row.sold_wechat) : '',
-          soldAlipayStr: row.sold_alipay != null ? String(row.sold_alipay) : '',
-          soldCashStr: row.sold_cash != null ? String(row.sold_cash) : '',
-          cashOpening: row.cash_opening != null ? String(row.cash_opening) : '',
-          cashClosing: row.cash_closing != null ? String(row.cash_closing) : '',
-          unitPriceLabel: String(ledgerForm.ITEM_UNIT_PRICE_JPY),
-          editSubmitting: false
-        };
-        self.setData(formData, function () {
-          self.calculateEditSummary();
+        util.setNavBarTitleSafe('修改记账');
+        self.setData({ editing: true }, function () {
+          const form = self.selectComponent('#form');
+          if (!form) return;
+          form.beginEdit(row, { preloadedShifts: shiftConfigs }).catch(function (err) {
+            console.error('[shift-detail/beginEdit]', err);
+            wx.showToast({ title: '加载表单失败，请重试', icon: 'none' });
+          });
         });
-        try {
-          wx.setNavigationBarTitle({ title: '修改记账' });
-        } catch (e) {
-          /* ignore */
-        }
       })
-      .catch(function () {
+      .catch(function (err) {
+        console.error('[shift-detail/onTapEditRecord]', err);
         wx.showToast({ title: '加载失败，请重试', icon: 'none' });
       })
       .then(function () {
-        try {
-          wx.hideLoading();
-        } catch (e2) {
-          /* ignore */
-        }
+        try { wx.hideLoading(); } catch (e) { /* ignore */ }
       });
   },
 
   cancelInlineEdit() {
-    var self = this;
-    var id = this._recordId;
-    var date = this._recordDate;
-    this.setData({ editing: false, editSubmitting: false }, function () {
-      try {
-        wx.setNavigationBarTitle({ title: '班次详情' });
-      } catch (e) {
-        /* ignore */
-      }
-      if (id) {
-        self.loadRecord(id, date);
-      }
-    });
+    util.setNavBarTitleSafe('班次详情');
+    this.setData({ editing: false });
   },
 
-  onEditDateChange(e) {
-    this.setData({ recordDate: e.detail.value });
-  },
-
-  onEditShiftChange(e) {
-    var ix = parseInt(e.detail.value, 10);
-    if (Number.isNaN(ix)) ix = 0;
-    var list = this.data.shiftConfigs || [];
-    if (ix < 0 || ix >= list.length) ix = 0;
-    var label =
-      list[ix] && list[ix].name ? list[ix].name : list[0] && list[0].name ? list[0].name : '请选择';
-    this.setData({ selectedShiftIndex: ix, shiftPickerLabel: label });
-  },
-
-  onEditRecorderPick(e) {
-    var ix = parseInt(e.detail.value, 10);
-    if (Number.isNaN(ix)) ix = 0;
-    var list = this.data.recorderNameList || [];
-    if (ix < 0 || ix >= list.length) ix = 0;
-    var app = getApp();
-    var u = app.globalData.userInfo || wx.getStorageSync('userInfo') || {};
-    var sid = storeUtil.getStoreIdFromUserInfo(u);
-    var key = sid ? 'ledger_recorder_' + sid : 'ledger_recorder';
-    var picked = list[ix] || '';
-    wx.setStorageSync(key, picked);
-    this.setData({ recorderNameIndex: ix, recorderPickerDisplay: picked });
-  },
-
-  onEditInput(e) {
-    var field = e.currentTarget.dataset.field;
-    if (!field) return;
-    this.setData({ [field]: e.detail.value });
-    this.calculateEditSummary();
-  },
-
-  calculateEditSummary() {
-    var d = {
-      qtyOpening: this.data.qtyOpening,
-      qtyClosing: this.data.qtyClosing,
-      qtyGift: this.data.qtyGift,
-      soldWechat: this.data.soldWechatStr,
-      soldAlipay: this.data.soldAlipayStr,
-      soldCash: this.data.soldCashStr,
-      cashOpening: this.data.cashOpening,
-      cashClosing: this.data.cashClosing
-    };
-    var s = ledgerForm.computeSummary(d);
-    this.setData(s);
-  },
-
-  submitInlineEdit() {
-    if (this.data.editSubmitting) return;
-    var self = this;
-    var id = this._recordId;
-    if (!id) return;
-
-    var recordDate = this.data.recordDate;
-    var shiftConfigs = this.data.shiftConfigs || [];
-    if (!recordDate) {
-      wx.showToast({ title: '请选择日期', icon: 'none' });
-      return;
+  onInlineSaved() {
+    util.setNavBarTitleSafe('班次详情');
+    this.setData({ editing: false });
+    if (this._recordId) {
+      this.loadRecord(this._recordId, this._recordDate);
     }
-    if (!shiftConfigs.length) {
-      wx.showToast({ title: '班次配置无效', icon: 'none' });
-      return;
-    }
-    var recorderName = String(this.data.recorderPickerDisplay || '').trim();
-    if (!recorderName) {
-      wx.showToast({ title: '请选择记账姓名', icon: 'none' });
-      return;
-    }
-
-    var postBody = {
-      id: id,
-      record_date: recordDate,
-      shift_config_id: shiftConfigs[this.data.selectedShiftIndex].id,
-      recorder_name: recorderName,
-      qty_opening: parseInt(this.data.qtyOpening, 10) || 0,
-      qty_closing: parseInt(this.data.qtyClosing, 10) || 0,
-      qty_gift: parseInt(this.data.qtyGift, 10) || 0,
-      sold_wechat: parseInt(this.data.soldWechatStr, 10) || 0,
-      sold_alipay: parseInt(this.data.soldAlipayStr, 10) || 0,
-      sold_cash: parseInt(this.data.soldCashStr, 10) || 0,
-      cash_opening: parseFloat(this.data.cashOpening) || 0,
-      cash_closing: parseFloat(this.data.cashClosing) || 0
-    };
-
-    var runPost = function () {
-      self.setData({ editSubmitting: true });
-      request
-        .post('/update_record.php', postBody)
-        .then(function () {
-          wx.showToast({ title: '已保存修改', icon: 'success', duration: 2000 });
-          self.setData({ editing: false, editSubmitting: false });
-          try {
-            wx.setNavigationBarTitle({ title: '班次详情' });
-          } catch (e) {
-            /* ignore */
-          }
-          self.loadRecord(id, recordDate);
-        })
-        .catch(function (err) {
-          self.setData({ editSubmitting: false });
-          wx.showToast({ title: (err && err.message) || '保存失败', icon: 'none' });
-        });
-    };
-
-    var warns = this.data.softWarnings || [];
-    if (warns.length) {
-      wx.showModal({
-        title: '数据核对提醒',
-        content: warns.join('\n\n'),
-        confirmText: '仍要保存',
-        cancelText: '返回修改',
-        success: function (res) {
-          if (res.confirm) runPost();
-        }
-      });
-      return;
-    }
-    runPost();
   }
 });

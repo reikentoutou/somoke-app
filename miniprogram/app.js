@@ -5,9 +5,7 @@ App({
     userInfo: null,
     token: '',
     currentStoreId: 0,
-    baseUrl: '',
-    /** 从班次详情等跳转录入 Tab 修改记录时写入 { id }，entry 页 onShow 消费 */
-    entryEdit: null
+    baseUrl: ''
   },
 
   onLaunch() {

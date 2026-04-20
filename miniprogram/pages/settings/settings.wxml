@@ -60,103 +60,19 @@
 
   <text class="label-sm settings-group-label">运营控制</text>
   <view class="settings-card">
-    <view class="settings-row settings-row-stack">
-      <view
-        class="settings-row settings-row-nested settings-row-tall"
-        hover-class="settings-row-hover"
-        catchtap="onWithdrawRowTap"
-      >
-        <view class="settings-icon-circle">现</view>
-        <view class="settings-col-grow">
-          <text class="body-md settings-row-label">取现设置</text>
-          <text class="body-md settings-sub">累计已取现 {{storeInfo.withdrawnFormatted}}</text>
-          <text wx:if="{{withdrawReconcileShort}}" class="body-md settings-sub settings-sub-reconcile">{{withdrawReconcileShort}}</text>
-        </view>
-        <text class="body-md settings-row-trailing">记录</text>
-        <text class="settings-chevron muted">›</text>
+    <view class="settings-row" hover-class="settings-row-hover" bindtap="goStockLedger">
+      <view class="settings-icon-circle">运</view>
+      <view class="settings-col-grow">
+        <text class="body-md settings-row-label">库存与现金</text>
+        <text class="body-md settings-sub">进货、取现、盘点与流水</text>
       </view>
-      <view wx:if="{{withdrawBoss}}" class="settings-withdraw-bar">
-        <input
-          class="settings-withdraw-input body-md"
-          type="number"
-          placeholder="取现金额（円）"
-          value="{{withdrawQty}}"
-          bindinput="onWithdrawInput"
-        />
-        <button class="settings-withdraw-btn" size="mini" bindtap="doWithdrawAdd">记一笔</button>
-      </view>
-    </view>
-    <view class="settings-divider"></view>
-    <view class="settings-row settings-row-stack">
-      <view class="settings-row settings-row-nested" hover-class="settings-row-hover" bindtap="onInventoryHint">
-        <view class="settings-icon-circle">库</view>
-        <view class="settings-col-grow">
-          <text class="body-md settings-row-label">库存管理</text>
-        </view>
-        <text class="body-md settings-row-trailing">当前 {{storeInfo.stock}} 件</text>
-        <text class="settings-chevron muted">›</text>
-      </view>
-      <view class="settings-restock">
-        <input
-          class="settings-restock-input body-md"
-          type="number"
-          placeholder="数量"
-          value="{{restockQty}}"
-          bindinput="onRestockInput"
-        />
-        <button class="settings-restock-btn" size="mini" bindtap="doRestock">补货</button>
-      </view>
-      <view class="settings-divider"></view>
-      <view class="settings-row settings-row-nested" hover-class="settings-row-hover" bindtap="goStockLedger">
-        <view class="settings-icon-circle">流</view>
-        <view class="settings-col-grow">
-          <text class="body-md settings-row-label">库存流水</text>
-          <text class="body-md settings-sub">补货、校准、记账引起的变动</text>
-        </view>
-        <text class="settings-chevron muted">›</text>
-      </view>
-      <view wx:if="{{withdrawBoss}}" class="settings-divider"></view>
-      <view wx:if="{{withdrawBoss}}" class="settings-row settings-row-nested" hover-class="settings-row-hover" bindtap="goStockAdjust">
-        <view class="settings-icon-circle">准</view>
-        <view class="settings-col-grow">
-          <text class="body-md settings-row-label">库存校准</text>
-          <text class="body-md settings-sub">按实盘件数对齐系统库存</text>
-        </view>
-        <text class="settings-chevron muted">›</text>
-      </view>
+      <text class="settings-chevron muted">›</text>
     </view>
   </view>
 
   <button class="settings-logout body-md" bindtap="logout">退出登录</button>
 
   <text class="body-md settings-version">Ledger v2.5.0</text>
-
-  <view wx:if="{{withdrawHistoryVisible}}" class="withdraw-mask" bindtap="closeWithdrawHistory">
-    <view class="withdraw-panel" catchtap="noopWithdraw">
-      <view class="withdraw-panel-head">
-        <text class="title-md withdraw-panel-title">取现记录</text>
-        <text
-          wx:if="{{withdrawPanelSummary.length}}"
-          class="body-md withdraw-copy-btn"
-          bindtap="copyWithdrawReconcile"
-        >复制摘要</text>
-      </view>
-      <scroll-view scroll-y class="withdraw-scroll" show-scrollbar="{{false}}">
-        <view wx:if="{{withdrawPanelSummary.length}}" class="withdraw-summary-box">
-          <text
-            wx:for="{{withdrawPanelSummary}}"
-            wx:for-index="si"
-            wx:key="si"
-            class="body-md withdraw-summary-line"
-          >{{item}}</text>
-        </view>
-        <block wx:for="{{withdrawHistoryLinesSafe}}" wx:for-index="idx" wx:key="idx">
-          <text class="body-md withdraw-line">{{item}}</text>
-        </block>
-      </scroll-view>
-      <view class="withdraw-panel-close body-md" bindtap="closeWithdrawHistory">关闭</view>
-    </view>
-  </view>
 
   <view class="bottom-spacer"></view>
 </view>

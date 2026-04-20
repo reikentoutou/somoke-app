@@ -29,10 +29,14 @@ Page({
 
   loadMembers() {
     var self = this;
+    /** 序号防竞态：onShow 重叠或操作后重拉时只采纳最后一次结果 */
+    self._loadSeq = (self._loadSeq || 0) + 1;
+    var seq = self._loadSeq;
     self.setData({ loading: true, errMsg: '' });
     request
       .get('/store_members.php', {})
       .then(function (data) {
+        if (seq !== self._loadSeq) return;
         var list = data && data.members ? data.members : [];
         var arr = Array.isArray(list) ? list : [];
         var bossCount = 0;
@@ -42,6 +46,7 @@ Page({
         self.setData({ members: arr, bossCount: bossCount, loading: false });
       })
       .catch(function (err) {
+        if (seq !== self._loadSeq) return;
         self.setData({
           loading: false,
           errMsg: (err && err.message) || '加载失败'

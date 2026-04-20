@@ -43,16 +43,21 @@ Page({
 
   loadShifts() {
     var self = this;
+    /** 序号防竞态：保存/停用后立刻重拉，避免被慢请求覆盖新结果 */
+    self._loadSeq = (self._loadSeq || 0) + 1;
+    var seq = self._loadSeq;
     self.setData({ loading: true, errMsg: '' });
     request
       .get('/get_shifts.php', {})
       .then(function (list) {
+        if (seq !== self._loadSeq) return;
         self.setData({
           shifts: Array.isArray(list) ? list : [],
           loading: false
         });
       })
       .catch(function (err) {
+        if (seq !== self._loadSeq) return;
         self.setData({
           loading: false,
           errMsg: (err && err.message) || '加载失败'

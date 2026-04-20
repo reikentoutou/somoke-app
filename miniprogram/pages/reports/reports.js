@@ -2,18 +2,71 @@ const request = require('../../utils/request');
 const util = require('../../utils/util');
 const auth = require('../../utils/auth');
 
-const MONTH_EN = [
-  'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
-  'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'
-];
-
 const WEEKDAY_SHORT = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+function monthDayBounds(ym) {
+  const parts = ym.split('-');
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) {
+    return { start: '', end: '' };
+  }
+  const last = new Date(y, m, 0).getDate();
+  const pad = n => String(n).padStart(2, '0');
+  return {
+    start: `${y}-${pad(m)}-01`,
+    end: `${y}-${pad(m)}-${pad(last)}`
+  };
+}
+
+function defaultPickerDateInMonth(ym) {
+  const b = monthDayBounds(ym);
+  if (!b.start) return '';
+  const today = util.formatDate(new Date());
+  if (today >= b.start && today <= b.end) {
+    return today;
+  }
+  return b.start;
+}
+
+function applyDetailDayFilter(groups, filterDate) {
+  const list = Array.isArray(groups) ? groups : [];
+  const d = filterDate && String(filterDate).trim();
+  if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    return list;
+  }
+  return list.filter(function (g) {
+    return g && g.date === d;
+  });
+}
+
+/** 明细筛选器展示用：如 4月15日 周一 */
+function detailFilterDayLabel(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    return '';
+  }
+  const segs = iso.split('-');
+  const mm = parseInt(segs[1], 10);
+  const dd = parseInt(segs[2], 10);
+  if (!Number.isFinite(mm) || !Number.isFinite(dd)) {
+    return iso;
+  }
+  const wd = util.getWeekday(iso);
+  return mm + '月' + dd + '日' + (wd ? ' ' + wd : '');
+}
 
 Page({
   data: {
     currentMonth: '',
     monthPickerValue: '',
     heroMonthLabel: '',
+    /** 每日班次明细：空字符串表示查看当月全部日期 */
+    detailFilterDate: '',
+    detailDayPickerValue: '',
+    monthDayPickStart: '',
+    monthDayPickEnd: '',
+    detailFilterLabel: '',
+    dailyGroupsAll: [],
     summary: {
       total_revenue: 0,
       total_wechat_amount: 0,
@@ -61,9 +114,12 @@ Page({
 
   buildHeroLabel(ym) {
     const parts = ym.split('-');
-    const idx = parseInt(parts[1], 10) - 1;
-    if (idx < 0 || idx > 11) return 'REVENUE SUMMARY';
-    return `${MONTH_EN[idx]} REVENUE SUMMARY`;
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) {
+      return '营收汇总';
+    }
+    return `${y}年${m}月 · 营收汇总`;
   },
 
   onMonthChange(e) {
@@ -71,7 +127,9 @@ Page({
     this.setData({
       currentMonth: month,
       monthPickerValue: month,
-      heroMonthLabel: this.buildHeroLabel(month)
+      heroMonthLabel: this.buildHeroLabel(month),
+      detailFilterDate: '',
+      detailFilterLabel: ''
     });
     this.loadMonthData();
   },
@@ -84,6 +142,32 @@ Page({
   onChartModeWeekly() {
     if (this.data.chartMode === 'weekly') return;
     this.setData({ chartMode: 'weekly' }, () => this.applyChartFromRecords());
+  },
+
+  onDetailDayPick(e) {
+    const picked = e.detail && e.detail.value ? String(e.detail.value).trim() : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(picked)) {
+      return;
+    }
+    const all = this.data.dailyGroupsAll || [];
+    const filtered = applyDetailDayFilter(all, picked);
+    this.setData({
+      detailFilterDate: picked,
+      detailDayPickerValue: picked,
+      detailFilterLabel: detailFilterDayLabel(picked),
+      dailyGroups: filtered
+    });
+  },
+
+  onClearDetailDayFilter() {
+    const all = this.data.dailyGroupsAll || [];
+    const ym = this.data.currentMonth;
+    this.setData({
+      detailFilterDate: '',
+      detailFilterLabel: '',
+      detailDayPickerValue: defaultPickerDateInMonth(ym),
+      dailyGroups: all
+    });
   },
 
   goShiftDetail(e) {
@@ -101,13 +185,31 @@ Page({
     const month = this.data.currentMonth;
     if (!month) return;
 
+    /** 序号防竞态：快速换月或 onShow 重叠时，仅采纳最后一次请求的结果 */
+    this._loadSeq = (this._loadSeq || 0) + 1;
+    const seq = this._loadSeq;
     this.setData({ loading: true });
     request.get('/get_records.php', { month })
       .then(data => {
+        if (seq !== this._loadSeq) return;
         const summary = (data && data.summary) || {};
         const raw = data && data.records;
         const records = Array.isArray(raw) ? raw : [];
-        const dailyGroups = this.groupByDate(records);
+        const dailyGroupsAll = this.groupByDate(records);
+        const bounds = monthDayBounds(month);
+        const filterDate = this.data.detailFilterDate;
+        const filtered =
+          filterDate && /^\d{4}-\d{2}-\d{2}$/.test(filterDate)
+            ? applyDetailDayFilter(dailyGroupsAll, filterDate)
+            : dailyGroupsAll;
+        const pickerVal =
+          filterDate && /^\d{4}-\d{2}-\d{2}$/.test(filterDate)
+            ? filterDate
+            : defaultPickerDateInMonth(month);
+        const detailLabel =
+          filterDate && /^\d{4}-\d{2}-\d{2}$/.test(filterDate)
+            ? detailFilterDayLabel(filterDate)
+            : '';
         const chartData = this.buildChartWithHeights(
           records,
           month,
@@ -118,8 +220,13 @@ Page({
           loading: false,
           summary,
           records,
-          dailyGroups,
+          dailyGroupsAll,
+          dailyGroups: filtered,
           chartData,
+          monthDayPickStart: bounds.start,
+          monthDayPickEnd: bounds.end,
+          detailDayPickerValue: pickerVal,
+          detailFilterLabel: detailLabel,
           revenueFormatted: util.formatMoney(summary.total_revenue || 0),
           wechatAmountFmt: util.formatMoney(summary.total_wechat_amount || 0),
           alipayAmountFmt: util.formatMoney(summary.total_alipay_amount || 0),
@@ -127,6 +234,7 @@ Page({
         });
       })
       .catch(() => {
+        if (seq !== this._loadSeq) return;
         this.setData({ loading: false });
         wx.showToast({ title: '数据加载失败，请稍后重试', icon: 'none' });
       });

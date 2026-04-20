@@ -13,20 +13,45 @@
 
   <view class="overview-channels">
     <view class="overview-channel card">
-      <text class="label-sm overview-channel__label">微信销量</text>
+      <view class="overview-channel__badge overview-channel__badge--wechat" aria-hidden="true" />
+      <text class="label-sm overview-channel__label">微信</text>
       <view class="overview-channel__amount-row">
         <text class="overview-channel__currency">¥</text>
         <text class="overview-channel__amount headline-lg">{{wechatAmountStr}}</text>
       </view>
-      <text class="overview-channel__meta body-md">{{wechatQty}} 件已售</text>
+      <text class="overview-channel__meta body-md">{{wechatQty}} 件</text>
     </view>
     <view class="overview-channel card">
-      <text class="label-sm overview-channel__label">支付宝销量</text>
+      <view class="overview-channel__badge overview-channel__badge--alipay" aria-hidden="true" />
+      <text class="label-sm overview-channel__label">支付宝</text>
       <view class="overview-channel__amount-row">
         <text class="overview-channel__currency">¥</text>
         <text class="overview-channel__amount headline-lg">{{alipayAmountStr}}</text>
       </view>
-      <text class="overview-channel__meta body-md">{{alipayQty}} 件已售</text>
+      <text class="overview-channel__meta body-md">{{alipayQty}} 件</text>
+    </view>
+    <view class="overview-channel card">
+      <view class="overview-channel__badge overview-channel__badge--cash" aria-hidden="true" />
+      <text class="label-sm overview-channel__label">现金</text>
+      <view class="overview-channel__amount-row">
+        <text class="overview-channel__currency">¥</text>
+        <text class="overview-channel__amount headline-lg">{{cashAmountStr}}</text>
+      </view>
+      <text class="overview-channel__meta body-md">{{cashQty}} 件</text>
+    </view>
+  </view>
+
+  <view wx:if="{{showChannelMix}}" class="overview-mix card-low">
+    <text class="label-sm overview-mix__label">今日渠道占比（按件数）</text>
+    <view class="overview-mix-track">
+      <view wx:if="{{payMixW > 0}}" class="overview-mix-seg overview-mix-seg--wechat" style="width: {{payPctW}}%;" />
+      <view wx:if="{{payMixA > 0}}" class="overview-mix-seg overview-mix-seg--alipay" style="width: {{payPctA}}%;" />
+      <view wx:if="{{payMixC > 0}}" class="overview-mix-seg overview-mix-seg--cash" style="width: {{payPctC}}%;" />
+    </view>
+    <view class="overview-mix-legend">
+      <text class="overview-mix-i w">微信 {{payPctW}}%</text>
+      <text class="overview-mix-i a">支付宝 {{payPctA}}%</text>
+      <text class="overview-mix-i c">现金 {{payPctC}}%</text>
     </view>
   </view>
 

@@ -1,6 +1,7 @@
 var request = require('../../utils/request');
 var util = require('../../utils/util');
 var auth = require('../../utils/auth');
+var ledgerForm = require('../../utils/ledgerRecordForm');
 
 function formatTimeRange(start, end) {
   var s = (start || '').toString();
@@ -49,8 +50,17 @@ Page({
     totalRevenueStr: '0.00',
     wechatAmountStr: '0.00',
     alipayAmountStr: '0.00',
+    cashAmountStr: '0.00',
     wechatQty: 0,
     alipayQty: 0,
+    cashQty: 0,
+    showChannelMix: false,
+    payPctW: 0,
+    payPctA: 0,
+    payPctC: 0,
+    payMixW: 0,
+    payMixA: 0,
+    payMixC: 0,
     records: [],
     loadError: false
   },
@@ -94,12 +104,26 @@ Page({
         var raw = data && data.records;
         var list = Array.isArray(raw) ? raw.map(mapRecord) : [];
 
+        var wq = summary.total_wechat_qty || 0;
+        var aq = summary.total_alipay_qty || 0;
+        var cq = summary.total_cash_qty || 0;
+        var mix = ledgerForm.computePaymentMixPct(wq, aq, cq);
+
         self.setData({
           totalRevenueStr: util.formatMoney(summary.total_revenue),
           wechatAmountStr: util.formatMoney(summary.total_wechat_amount),
           alipayAmountStr: util.formatMoney(summary.total_alipay_amount),
-          wechatQty: summary.total_wechat_qty || 0,
-          alipayQty: summary.total_alipay_qty || 0,
+          cashAmountStr: util.formatMoney(summary.total_cash_amount),
+          wechatQty: wq,
+          alipayQty: aq,
+          cashQty: cq,
+          showChannelMix: mix.showPaymentMix,
+          payPctW: mix.payPctW,
+          payPctA: mix.payPctA,
+          payPctC: mix.payPctC,
+          payMixW: mix.payMixSw,
+          payMixA: mix.payMixSa,
+          payMixC: mix.payMixSc,
           records: list
         });
       })

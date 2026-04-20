@@ -14,6 +14,46 @@ function parseCashInput(str) {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * 录入/修改提交前：上班下班数量、上班下班现金均为必填
+ * @param {object} d 与录入页 data 相同字段（字符串）
+ * @returns {{ ok: boolean, message: string }}
+ */
+function validateRequiredQtyAndCash(d) {
+  var qo = String(d.qtyOpening == null ? '' : d.qtyOpening).trim();
+  var qc = String(d.qtyClosing == null ? '' : d.qtyClosing).trim();
+  if (qo === '') {
+    return { ok: false, message: '请填写上班数量' };
+  }
+  if (qc === '') {
+    return { ok: false, message: '请填写下班数量' };
+  }
+  if (!/^\d+$/.test(qo)) {
+    return { ok: false, message: '上班数量须为非负整数' };
+  }
+  if (!/^\d+$/.test(qc)) {
+    return { ok: false, message: '下班数量须为非负整数' };
+  }
+  var io = parseInt(qo, 10);
+  var ic = parseInt(qc, 10);
+  if (!Number.isFinite(io) || io < 0) {
+    return { ok: false, message: '上班数量须为非负整数' };
+  }
+  if (!Number.isFinite(ic) || ic < 0) {
+    return { ok: false, message: '下班数量须为非负整数' };
+  }
+
+  var co = parseCashInput(d.cashOpening);
+  var cc = parseCashInput(d.cashClosing);
+  if (co === null) {
+    return { ok: false, message: '请填写上班现金' };
+  }
+  if (cc === null) {
+    return { ok: false, message: '请填写下班现金' };
+  }
+  return { ok: true, message: '' };
+}
+
 function buildSoftWarnings(ctx) {
   var qtySold = ctx.qtySold;
   var paymentTotal = ctx.paymentTotal;
@@ -54,6 +94,39 @@ function buildSoftWarnings(ctx) {
 }
 
 /**
+ * 支付渠道件数占比（用于横向堆叠条，百分比之和为 100）
+ */
+function computePaymentMixPct(sw, sa, sc) {
+  var w = parseInt(sw, 10) || 0;
+  var a = parseInt(sa, 10) || 0;
+  var c = parseInt(sc, 10) || 0;
+  var t = w + a + c;
+  if (t <= 0) {
+    return {
+      showPaymentMix: false,
+      payMixSw: w,
+      payMixSa: a,
+      payMixSc: c,
+      payPctW: 0,
+      payPctA: 0,
+      payPctC: 0
+    };
+  }
+  var pw = Math.round((w * 1000) / t) / 10;
+  var pa = Math.round((a * 1000) / t) / 10;
+  var pc = Math.round((100 - pw - pa) * 10) / 10;
+  return {
+    showPaymentMix: true,
+    payMixSw: w,
+    payMixSa: a,
+    payMixSc: c,
+    payPctW: pw,
+    payPctA: pa,
+    payPctC: pc
+  };
+}
+
+/**
  * @param {object} d 与录入页 data 相同字段（字符串）
  */
 function computeSummary(d) {
@@ -76,12 +149,21 @@ function computeSummary(d) {
     cashClosing: d.cashClosing
   });
 
+  var mix = computePaymentMixPct(sw, sa, sc);
+
   return {
     qtySold: soldInventory,
     paymentSoldTotal: paymentTotal,
     totalRevenueJpy: util.formatJpy(revenue),
     softWarnings: softWarnings,
-    hasSoftWarnings: softWarnings.length > 0
+    hasSoftWarnings: softWarnings.length > 0,
+    showPaymentMix: mix.showPaymentMix,
+    payMixSw: mix.payMixSw,
+    payMixSa: mix.payMixSa,
+    payMixSc: mix.payMixSc,
+    payPctW: mix.payPctW,
+    payPctA: mix.payPctA,
+    payPctC: mix.payPctC
   };
 }
 
@@ -112,7 +194,9 @@ function shiftConfigMatched(shiftConfigs, shiftConfigId) {
 module.exports = {
   ITEM_UNIT_PRICE_JPY: ITEM_UNIT_PRICE_JPY,
   parseCashInput: parseCashInput,
+  validateRequiredQtyAndCash: validateRequiredQtyAndCash,
   buildSoftWarnings: buildSoftWarnings,
+  computePaymentMixPct: computePaymentMixPct,
   computeSummary: computeSummary,
   shiftIndexForConfigId: shiftIndexForConfigId,
   shiftConfigMatched: shiftConfigMatched

@@ -45,10 +45,22 @@ function getWeekday(dateStr) {
   return days[new Date(dateStr).getDay()];
 }
 
+/**
+ * 设置导航栏标题；个别场景（如分享中、组件未渲染完成）调用会抛错，统一 try/catch
+ */
+function setNavBarTitleSafe(title) {
+  try {
+    wx.setNavigationBarTitle({ title: title });
+  } catch (e) {
+    /* ignore */
+  }
+}
+
 module.exports = {
   formatDate,
   formatMonth,
   formatMoney,
   formatJpy,
-  getWeekday
+  getWeekday,
+  setNavBarTitleSafe
 };

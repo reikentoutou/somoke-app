@@ -1,11 +1,16 @@
 <view class="page-container">
 
   <view class="month-picker-row">
-    <text class="label-sm month-picker-label">报表月份</text>
+    <view class="month-picker-head">
+      <text class="label-sm month-picker-label">查询月份</text>
+      <text class="month-picker-sub body-md">选择后加载该月报表与明细</text>
+    </view>
     <picker mode="date" fields="month" value="{{monthPickerValue}}" bindchange="onMonthChange">
       <view class="card month-picker-card">
-        <text class="month-picker-value">{{currentMonth}}</text>
-        <text class="month-picker-hint">点击更改</text>
+        <view class="month-picker-card-main">
+          <text class="month-picker-value">{{currentMonth}}</text>
+          <text class="month-picker-hint">点击更改 ›</text>
+        </view>
       </view>
     </picker>
   </view>
@@ -18,7 +23,7 @@
     </view>
     <view class="hero-sync">
       <view class="hero-sync-dot"></view>
-      <text class="body-md hero-sync-text">Active reporting period</text>
+      <text class="body-md hero-sync-text">以下为当前选中月份的统计数据</text>
     </view>
   </view>
 
@@ -59,12 +64,12 @@
         class="chart-toggle {{chartMode === 'daily' ? 'active' : ''}}"
         hover-class="chart-toggle-hover"
         bindtap="onChartModeDaily"
-      >Daily</view>
+      >按日</view>
       <view
         class="chart-toggle {{chartMode === 'weekly' ? 'active' : ''}}"
         hover-class="chart-toggle-hover"
         bindtap="onChartModeWeekly"
-      >Weekly</view>
+      >按周</view>
     </view>
     <view class="chart-bars" wx:if="{{chartData && chartData.length}}">
       <view
@@ -85,8 +90,30 @@
     <view class="chart-empty body-md" wx:else>本月暂无数据</view>
   </view>
 
-  <view class="section-head section-head-spaced">
-    <text class="title-md section-title">每日班次明细</text>
+  <view class="section-head section-head-spaced section-head--with-filter">
+    <view class="section-head__row">
+      <text class="title-md section-title">每日班次明细</text>
+    </view>
+    <view class="day-filter-bar">
+      <view
+        class="day-filter-chip {{!detailFilterDate ? 'day-filter-chip--on' : ''}}"
+        hover-class="day-filter-chip-hover"
+        bindtap="onClearDetailDayFilter"
+      >全部日期</view>
+      <picker
+        class="day-filter-picker-wrap"
+        mode="date"
+        value="{{detailDayPickerValue}}"
+        start="{{monthDayPickStart}}"
+        end="{{monthDayPickEnd}}"
+        bindchange="onDetailDayPick"
+      >
+        <view class="day-filter-chip {{detailFilterDate ? 'day-filter-chip--on' : ''}}">
+          <text>{{detailFilterDate ? detailFilterLabel : '指定日期'}}</text>
+          <text class="day-filter-chip__chev">›</text>
+        </view>
+      </picker>
+    </view>
   </view>
 
   <block wx:for="{{dailyGroups || []}}" wx:key="date" wx:for-item="group">
@@ -121,7 +148,8 @@
     </view>
   </block>
 
-  <view class="list-empty body-md" wx:if="{{!dailyGroups.length && !loading}}">本月暂无班次记录</view>
+  <view class="list-empty body-md" wx:if="{{!dailyGroups.length && !loading && !detailFilterDate}}">本月暂无班次记录</view>
+  <view class="list-empty body-md" wx:if="{{!dailyGroups.length && !loading && detailFilterDate}}">该日暂无班次记录</view>
 
   <view class="bottom-spacer"></view>
 </view>
