@@ -1,6 +1,0 @@
-{
-  "navigationBarTitleText": "班次详情",
-  "usingComponents": {
-    "ledger-record-form": "/components/ledger-record-form/ledger-record-form"
-  }
-}
