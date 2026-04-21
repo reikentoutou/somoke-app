@@ -92,8 +92,17 @@ export const useAuthStore = defineStore('auth', {
       storage.set(STORAGE_KEYS.currentStoreId, sid)
     },
 
-    applyUserInfoPatch(userInfo: UserInfo) {
+    /**
+     * 合并服务端返回的 user_info。`updateProfile` 等接口常只回 `{ nickname }`，
+     * 若整对象替换会丢掉 stores → needsOnboarding 误判为 true，设置页保存昵称会跳进 onboarding。
+     */
+    applyUserInfoPatch(patch: Partial<UserInfo>) {
+      const prev = this.userInfo ?? emptyUser()
+      const userInfo: UserInfo = { ...prev, ...patch }
       const stores = normalizeStores(userInfo)
+      userInfo.stores = stores
+      userInfo.store_count = stores.length
+
       const sid = getStoreIdFromUserInfo(userInfo)
       const needsOnboarding = stores.length === 0
       const needsStoreSelection = stores.length > 1 && sid <= 0
