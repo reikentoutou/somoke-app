@@ -12,6 +12,9 @@
 # 微信小程序
 miniprogram_npm/
 node_modules/
+# 若在仓库根误导入小程序工程，开发者工具可能生成（小程序根应在 packages/app/dist/*/mp-weixin）
+/project.config.json
+/project.private.config.json
 
 # 日志与临时文件
 *.log

@@ -244,7 +244,10 @@ async function fetchUserStores(userId) {
   for (var i = 0; i < r.data.length; i++) {
     var sm = r.data[i];
     var s = await db.collection('stores').where({ id: sm.store_id }).limit(1).get();
-    var name = s.data[0] ? s.data[0].name : '';
+    if (!s.data.length) continue;
+    var st = s.data[0];
+    if (st.is_active === 0) continue;
+    var name = st.name ? String(st.name) : '';
     list.push({ store_id: sm.store_id, name: name, role: sm.role });
   }
   list.sort(function (a, b) {
@@ -684,6 +687,67 @@ async function handleStoreInviteCreate(openid, payload) {
     },
     '邀请码已生成（请妥善保管，仅显示一次）'
   );
+}
+
+async function handleStoreUpdate(openid, payload) {
+  var u = await requireUser(openid);
+  if (!u) return fail(401, '未登录或用户无效');
+  var storeId = parseInt(payload.store_id, 10);
+  if (!storeId || storeId <= 0) return fail(400, '请指定门店');
+  var role = await requireStoreMembership(u.userId, storeId);
+  if (role == null) return fail(403, '无权操作该门店');
+  if (role !== 1) return fail(403, '仅门店管理员可修改名称');
+  var name = payload.name != null ? String(payload.name).trim() : '';
+  if (!name) return fail(400, '请填写门店名称');
+  if (name.length > 64) return fail(400, '门店名称过长');
+  var stQ = await db.collection('stores').where({ id: storeId }).limit(1).get();
+  if (!stQ.data.length) return fail(404, '门店不存在');
+  var doc = stQ.data[0];
+  if (doc.is_active === 0) return fail(400, '门店已关闭');
+  await db.collection('stores').doc(doc._id).update({
+    data: { name: name, updated_at: db.serverDate() },
+  });
+  return ok({ store_id: storeId, name: name }, '已保存');
+}
+
+/**
+ * 软删门店：门店 is_active=0，全员 membership 置为失效，并校正各用户 current_store_id。
+ * 业务数据（班次、记账记录等）保留在库内，避免误删造成对账缺口。
+ */
+async function handleStoreDelete(openid, payload) {
+  var u = await requireUser(openid);
+  if (!u) return fail(401, '未登录或用户无效');
+  var storeId = parseInt(payload.store_id, 10);
+  if (!storeId || storeId <= 0) return fail(400, '请指定门店');
+  var role = await requireStoreMembership(u.userId, storeId);
+  if (role == null) return fail(403, '无权操作该门店');
+  if (role !== 1) return fail(403, '仅门店管理员可删除门店');
+  var stQ = await db.collection('stores').where({ id: storeId }).limit(1).get();
+  if (!stQ.data.length) return fail(404, '门店不存在');
+  var doc = stQ.data[0];
+  if (doc.is_active === 0) return fail(400, '门店已删除');
+
+  var memQ = await db
+    .collection('store_members')
+    .where({ store_id: storeId, is_active: 1 })
+    .limit(500)
+    .get();
+  for (var i = 0; i < memQ.data.length; i++) {
+    await db.collection('store_members').doc(memQ.data[i]._id).update({
+      data: { is_active: 0, updated_at: db.serverDate() },
+    });
+  }
+  var seenUser = {};
+  for (var j = 0; j < memQ.data.length; j++) {
+    var uid = memQ.data[j].user_id;
+    if (seenUser[uid]) continue;
+    seenUser[uid] = true;
+    await refreshUserCurrentStoreAfterMembershipChange(uid);
+  }
+  await db.collection('stores').doc(doc._id).update({
+    data: { is_active: 0, updated_at: db.serverDate() },
+  });
+  return ok({ store_id: storeId }, '门店已删除');
 }
 
 async function handleGetShifts(openid) {
@@ -2031,6 +2095,10 @@ exports.main = async function (event, context) {
         return await handleStoreJoin(OPENID, payload);
       case 'storeInviteCreate':
         return await handleStoreInviteCreate(OPENID, payload);
+      case 'storeUpdate':
+        return await handleStoreUpdate(OPENID, payload);
+      case 'storeDelete':
+        return await handleStoreDelete(OPENID, payload);
       case 'getShifts':
         return await handleGetShifts(OPENID);
       case 'shiftConfigSave':

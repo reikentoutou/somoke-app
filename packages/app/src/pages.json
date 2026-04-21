@@ -12,6 +12,7 @@
     { "path": "pages/store-create/index", "style": { "navigationBarTitleText": "创建门店" } },
     { "path": "pages/store-join/index", "style": { "navigationBarTitleText": "加入门店" } },
     { "path": "pages/store-select/index", "style": { "navigationBarTitleText": "选择门店" } },
+    { "path": "pages/store-edit/index", "style": { "navigationBarTitleText": "门店设置" } },
     { "path": "pages/entry/index", "style": { "navigationBarTitleText": "Ledger" } },
     { "path": "pages/reports/index", "style": { "navigationBarTitleText": "报表" } },
     { "path": "pages/settings/index", "style": { "navigationBarTitleText": "设置" } },

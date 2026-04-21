@@ -1,7 +1,17 @@
 import { defineConfig, type Plugin } from 'vite'
 import uni from '@dcloudio/vite-plugin-uni'
 import { resolve } from 'node:path'
-import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import {
+  copyFile,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  stat,
+  symlink,
+  unlink,
+  writeFile
+} from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 
 /**
@@ -52,9 +62,11 @@ function copyCustomTabBarPlugin(): Plugin {
 }
 
 /**
- * uni 生成的 mp-weixin `project.config.json` 默认不带 `cloudfunctionRoot`，
- * 开发者工具里看不到仓库中的 `cloudfunctions/`。从产物根向上 5 级到 monorepo 根
- *（mp-weixin → build|dev → dist → app → packages → repo），再进 `cloudfunctions`。
+ * 微信开发者工具以「小程序根」为文件树根，写在 project.config 里的相对 cloudfunctionRoot
+ * 若指向树外目录，左侧**不会**出现 cloudfunctions，右键也就没有「上传并部署」。
+ *
+ * 做法：在 mp-weixin 产物根下创建 `cloudfunctions` → 仓库 `cloudfunctions` 的符号链接（或 Windows junction），
+ * 并把 `cloudfunctionRoot` 固定为 `cloudfunctions`，与 monorepo 布局无关、也不必手填绝对路径。
  */
 function patchMpProjectCloudRootPlugin(): Plugin {
   return {
@@ -62,11 +74,32 @@ function patchMpProjectCloudRootPlugin(): Plugin {
     apply: () => UNI_PLATFORM === 'mp-weixin',
     async writeBundle() {
       const sub = process.env.NODE_ENV === 'production' ? 'build' : 'dev'
-      const cfgPath = resolve(__dirname, 'dist', sub, UNI_PLATFORM, 'project.config.json')
+      const mpRoot = resolve(__dirname, 'dist', sub, UNI_PLATFORM)
+      const cfgPath = resolve(mpRoot, 'project.config.json')
       if (!existsSync(cfgPath)) return
+      const cloudRoot = resolve(__dirname, '../../cloudfunctions')
+      if (!existsSync(cloudRoot)) return
+
+      const linkPath = resolve(mpRoot, 'cloudfunctions')
+      try {
+        if (existsSync(linkPath)) {
+          const st = await lstat(linkPath)
+          if (st.isSymbolicLink()) {
+            await unlink(linkPath)
+          }
+        }
+        if (!existsSync(linkPath)) {
+          const type = process.platform === 'win32' ? 'junction' : 'dir'
+          await symlink(cloudRoot, linkPath, type)
+        }
+      } catch (err) {
+        console.warn('[somoke:patch-mp-project-cloud-root] symlink cloudfunctions failed', err)
+      }
+
       const raw = await readFile(cfgPath, 'utf8')
       const j = JSON.parse(raw) as Record<string, unknown>
-      j.cloudfunctionRoot = '../../../../../cloudfunctions'
+      j.cloudfunctionRoot = 'cloudfunctions'
+      delete j.cloudfunctionTemplateRoot
       await writeFile(cfgPath, `${JSON.stringify(j, null, 2)}\n`, 'utf8')
     }
   }

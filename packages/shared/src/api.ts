@@ -94,6 +94,24 @@ export interface StoreInviteCreateRes {
   used_count: number
 }
 
+/** storeUpdate：仅门店管理员；修改 `stores.name` */
+export interface StoreUpdateReq extends SessionHeader {
+  store_id: number
+  name: string
+}
+export interface StoreUpdateRes {
+  store_id: number
+  name: string
+}
+
+/** storeDelete：仅门店管理员；软删门店并失效全员 membership */
+export interface StoreDeleteReq extends SessionHeader {
+  store_id: number
+}
+export interface StoreDeleteRes {
+  store_id: number
+}
+
 /** storeDetail
  *
  * 后端返回的是扁平结构（见 cloudfunctions/api/index.js `handleStoreDetail`），
@@ -278,8 +296,9 @@ export interface UpdateProfileReq extends SessionHeader {
   nickname?: string
   avatar_url?: string
 }
+/** 云函数可能只返回部分字段（如仅 nickname），前端须与本地会话合并 */
 export interface UpdateProfileRes {
-  user_info: UserInfo
+  user_info: Partial<UserInfo>
 }
 
 /** stockLedgerList */
@@ -336,6 +355,8 @@ export interface Contract {
   storeSwitch: { req: StoreSwitchReq; res: StoreSwitchRes }
   storeJoin: { req: StoreJoinReq; res: StoreJoinRes }
   storeInviteCreate: { req: StoreInviteCreateReq; res: StoreInviteCreateRes }
+  storeUpdate: { req: StoreUpdateReq; res: StoreUpdateRes }
+  storeDelete: { req: StoreDeleteReq; res: StoreDeleteRes }
   storeDetail: { req: StoreDetailReq; res: StoreDetailRes }
   getShifts: { req: GetShiftsReq; res: GetShiftsRes }
   shiftConfigSave: { req: ShiftConfigSaveReq; res: ShiftConfigSaveRes }

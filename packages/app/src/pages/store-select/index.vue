@@ -163,6 +163,13 @@ async function submitJoin() {
 function goCreateStore() {
   uni.navigateTo({ url: '/pages/store-create/index?from=settings' })
 }
+
+function goStoreEdit(s: DecoratedStore) {
+  if (s.role !== 1) return
+  uni.navigateTo({
+    url: `/pages/store-edit/index?store_id=${s.store_id}&name=${encodeURIComponent(s.displayName)}`
+  })
+}
 </script>
 
 <template>
@@ -199,6 +206,14 @@ function goCreateStore() {
             <text class="role">{{ s.roleLabel }}</text>
           </view>
           <view class="trail">
+            <view
+              v-if="fromSettings && s.role === 1"
+              class="manage-pill"
+              hover-class="manage-pill-hover"
+              @tap.stop="goStoreEdit(s)"
+            >
+              <text>管理</text>
+            </view>
             <view v-if="s.isCurrent" class="current-mark">
               <view class="dot" />
               <text class="current-text">使用中</text>
@@ -312,6 +327,20 @@ function goCreateStore() {
 .role {
   font-size: 24rpx;
   color: #8a8a8f;
+}
+.manage-pill {
+  padding: 8rpx 20rpx;
+  border-radius: 999rpx;
+  background: #f3f3f5;
+  margin-right: 12rpx;
+}
+.manage-pill text {
+  font-size: 24rpx;
+  color: #1a1c1d;
+  font-weight: 500;
+}
+.manage-pill-hover {
+  opacity: 0.75;
 }
 .trail {
   display: flex;

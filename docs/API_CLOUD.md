@@ -22,6 +22,8 @@
 | `storeSwitch`        | POST `/store_switch.php`          | `store_id`                                                                                                                     |
 | `storeJoin`          | POST `/store_join.php`            | `code` 邀请码                                                                                                                  |
 | `storeInviteCreate`  | POST `/store_invite_create.php`   | `store_id`；可选 `max_uses`、`expire_days`                                                                                     |
+| `storeUpdate`        | —                                 | 仅管理员；`store_id`、`name`（≤64）；更新门店名称                                                                              |
+| `storeDelete`        | —                                 | 仅管理员；`store_id`；软删门店（`stores.is_active=0`）并失效该店全员 `store_members`，用户 `current_store_id` 由服务端校正     |
 | `getShifts`          | GET `/get_shifts.php`             | 当前门店 **启用** 班次列表（`is_active: 1`）                                                                                   |
 | `shiftConfigSave`    | POST `/shift_config_save.php`     | 仅管理员；见下文「班次配置」                                                                                                   |
 | `shiftConfigDelete`  | POST `/shift_config_delete.php`   | 仅管理员；`id` 班次数字 id，软删                                                                                               |

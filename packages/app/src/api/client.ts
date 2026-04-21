@@ -24,6 +24,8 @@ const INVALIDATE_ON_SUCCESS: Partial<Record<ActionName, readonly string[]>> = {
   recorderNameDelete: ['storeDetail:'],
   storeSwitch: ['shifts:', 'storeDetail:'],
   storeCreate: ['shifts:', 'storeDetail:'],
+  storeUpdate: ['storeDetail:'],
+  storeDelete: ['shifts:', 'storeDetail:'],
   storeJoin: ['shifts:', 'storeDetail:'],
   addRecord: ['storeDetail:'],
   updateRecord: ['storeDetail:'],

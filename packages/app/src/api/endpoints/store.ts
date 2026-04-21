@@ -4,12 +4,16 @@ import type {
   Store,
   StoreCreateReq,
   StoreCreateRes,
+  StoreDeleteReq,
+  StoreDeleteRes,
   StoreDetailReq,
   StoreDetailRes,
   StoreJoinReq,
   StoreJoinRes,
   StoreSwitchReq,
-  StoreSwitchRes
+  StoreSwitchRes,
+  StoreUpdateReq,
+  StoreUpdateRes
 } from '@somoke/shared'
 import { rpc, rpcCached } from '../client'
 
@@ -41,6 +45,14 @@ export function joinStore(req: StoreJoinReq) {
   return rpc('storeJoin', req)
 }
 
+export function updateStore(req: StoreUpdateReq): Promise<StoreUpdateRes> {
+  return rpc('storeUpdate', req)
+}
+
+export function deleteStore(req: StoreDeleteReq): Promise<StoreDeleteRes> {
+  return rpc('storeDelete', req)
+}
+
 /**
  * 门店详情（含 recorder_names）短 TTL 缓存，写操作会自动失效。
  */
@@ -52,4 +64,11 @@ export function getStoreDetail(req: StoreDetailReq = {}): Promise<StoreDetailRes
 }
 
 /** 抑制"未使用符号"告警，下列类型在调用方推导返回值时需要 */
-export type { GetStoresRes, StoreCreateRes, StoreSwitchRes, StoreJoinRes }
+export type {
+  GetStoresRes,
+  StoreCreateRes,
+  StoreSwitchRes,
+  StoreJoinRes,
+  StoreUpdateRes,
+  StoreDeleteRes
+}
