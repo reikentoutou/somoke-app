@@ -2,7 +2,7 @@
 import { computed, ref, shallowRef } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import type { ShiftRecord } from '@somoke/shared'
-import { recordApi } from '@/api'
+import { deleteRecord, getRecord, getRecords } from '@/api/endpoints/record'
 import { useSession } from '@/composables/useSession'
 import { useAuthStore } from '@/stores/auth'
 import { useShiftConfigsStore } from '@/stores/shiftConfigs'
@@ -32,6 +32,7 @@ const recordDate = ref<string>('')
 const raw = shallowRef<ShiftRecord | null>(null)
 const view = ref(emptyShiftDetailView())
 const canEdit = ref(false)
+const canDelete = ref(false)
 const editing = ref(false)
 
 const parseId = (v: unknown): number => {
@@ -44,6 +45,7 @@ function resetEmpty() {
   raw.value = null
   view.value = emptyShiftDetailView()
   canEdit.value = false
+  canDelete.value = false
 }
 
 async function loadRecord(id: number, date: string): Promise<void> {
@@ -57,22 +59,23 @@ async function loadRecord(id: number, date: string): Promise<void> {
     raw.value = row
     view.value = mapRecordToDetailView(row)
     canEdit.value = canEditRecord(row, auth.userInfo, auth.isBoss)
+    canDelete.value = auth.isBoss
   }
 
   try {
-    const res = await recordApi.getRecord({ id })
+    const res = await getRecord({ id })
     const row = res.record
     if (row) {
       applyRow(row)
     } else {
       // fallback：当日 records 里捞一遍
-      const list = await recordApi.getRecords({ date })
+      const list = await getRecords({ date })
       const hit = (list.records ?? []).find(r => Number(r.id) === id) ?? null
       applyRow(hit)
     }
   } catch {
     try {
-      const list = await recordApi.getRecords({ date })
+      const list = await getRecords({ date })
       const hit = (list.records ?? []).find(r => Number(r.id) === id) ?? null
       applyRow(hit)
     } catch {
@@ -154,6 +157,43 @@ async function onSubmitSuccess() {
     await loadRecord(recordId.value, recordDate.value)
   }
 }
+
+async function onTapDelete(): Promise<void> {
+  if (!recordId.value || !raw.value) {
+    uni.showToast({ title: '记录未加载完成', icon: 'none' })
+    return
+  }
+  if (!auth.isBoss) {
+    uni.showToast({ title: '仅管理员可删除', icon: 'none' })
+    return
+  }
+  const ok = await new Promise<boolean>(resolve => {
+    uni.showModal({
+      title: '删除记录',
+      content: '删除后将回滚库存与现金并写入流水，确定删除这条记录吗？',
+      confirmText: '确认删除',
+      confirmColor: '#c0392b',
+      cancelText: '取消',
+      success: res => resolve(!!res.confirm),
+      fail: () => resolve(false)
+    })
+  })
+  if (!ok) return
+
+  uni.showLoading({ title: '删除中', mask: true })
+  try {
+    await deleteRecord({ id: recordId.value })
+    uni.showToast({ title: '已删除记录', icon: 'success' })
+    setTimeout(() => {
+      uni.navigateBack({ delta: 1 })
+    }, 300)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '删除失败，请重试'
+    uni.showToast({ title: msg, icon: 'none' })
+  } finally {
+    uni.hideLoading()
+  }
+}
 </script>
 
 <template>
@@ -191,6 +231,9 @@ async function onSubmitSuccess() {
       <view v-if="canEdit" class="actions">
         <view class="edit-btn" hover-class="edit-btn-hover" @tap="onTapEdit">
           <text class="edit-btn-text">修改本条记录</text>
+        </view>
+        <view v-if="canDelete" class="delete-btn" hover-class="delete-btn-hover" @tap="onTapDelete">
+          <text class="delete-btn-text">删除本条记录</text>
         </view>
       </view>
 
@@ -238,6 +281,24 @@ async function onSubmitSuccess() {
   color: #fff;
   font-weight: 500;
   font-size: 28rpx;
+}
+.delete-btn {
+  margin-top: 20rpx;
+  padding: 24rpx 32rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid #e3d3d3;
+  background: #fff;
+  align-items: center;
+  justify-content: center;
+  display: flex;
+}
+.delete-btn-hover {
+  opacity: 0.88;
+}
+.delete-btn-text {
+  color: #c0392b;
+  font-weight: 500;
+  font-size: 26rpx;
 }
 .edit-container {
   padding: 0;

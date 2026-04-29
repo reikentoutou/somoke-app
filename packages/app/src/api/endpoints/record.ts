@@ -1,4 +1,10 @@
-import type { AddRecordReq, GetRecordReq, GetRecordsReq, UpdateRecordReq } from '@somoke/shared'
+import type {
+  AddRecordReq,
+  DeleteRecordReq,
+  GetRecordReq,
+  GetRecordsReq,
+  UpdateRecordReq
+} from '@somoke/shared'
 import { rpc } from '../client'
 
 export function getRecords(req: GetRecordsReq = {}) {
@@ -15,4 +21,8 @@ export function addRecord(req: AddRecordReq) {
 
 export function updateRecord(req: UpdateRecordReq) {
   return rpc('updateRecord', req)
+}
+
+export function deleteRecord(req: DeleteRecordReq) {
+  return rpc('deleteRecord', req)
 }

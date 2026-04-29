@@ -2,7 +2,7 @@
 import { computed, ref, shallowRef, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import type { ShiftRecord } from '@somoke/shared'
-import { recordApi } from '@/api'
+import { getRecords } from '@/api/endpoints/record'
 import { useSession } from '@/composables/useSession'
 import { useLoadSeq } from '@/composables/useLoadSeq'
 import { useTabBarSync } from '@/composables/useTabBarSync'
@@ -82,7 +82,7 @@ async function loadMonthData(): Promise<void> {
   const seq = loadSeq.bump()
   loading.value = true
   try {
-    const data = await recordApi.getRecords({ month })
+    const data = await getRecords({ month })
     if (loadSeq.isStale(seq)) return
     const s = data.summary ?? null
     summary.value = {

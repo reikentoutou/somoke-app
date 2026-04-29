@@ -1119,30 +1119,16 @@ async function handleAddRecord(openid, payload) {
   if (stockDeduct < 0) stockDeduct = 0;
   var cashDelta = soldCash * unitPrice;
 
-  /** 确定性 _id：同一 (store, date, shift) 组合下任何并发写入都会命中同一文档，天然防重复录入 */
-  var shiftRecDocId = 'sr_' + storeId + '_' + recordDate + '_' + shiftConfigId;
-
   /** 预分配业务 id（nextSeq 自身事务，不与下面外层事务嵌套） */
   var recordId = await nextSeq('shift_record');
+  /** 宽松模式：允许同 (店/日/班) 多次录入，文档 _id 仅按业务 id 保证唯一 */
+  var shiftRecDocId = 'sr_' + recordId;
   var needLedger = stockDeduct > 0 || cashDelta !== 0;
   var ledgerId = needLedger ? await nextSeq('stock_ledger') : null;
 
   var txResult;
   try {
     txResult = await db.runTransaction(async function (tx) {
-      /** 同 (店/日/班) 唯一性：事务内检查，保证不会有两个记录并存 */
-      try {
-        var existing = await tx.collection('shift_records').doc(shiftRecDocId).get();
-        if (existing && existing.data) {
-          var err = new Error('DUP_RECORD');
-          err._user = { code: 400, msg: '该日期该班次已有记录，不能重复录入' };
-          throw err;
-        }
-      } catch (e) {
-        if (e && e._user) throw e;
-        if (!isDocNotFoundErr(e)) throw e;
-      }
-
       var stSnap = await tx.collection('stores').doc(storeDbId).get();
       if (!stSnap || !stSnap.data) {
         var e2 = new Error('STORE_MISSING');
@@ -1841,20 +1827,6 @@ async function handleUpdateRecord(openid, payload) {
   var storeDbId = stQ.data[0]._id;
   var whitelist = Array.isArray(stQ.data[0].recorder_names) ? stQ.data[0].recorder_names : [];
 
-  var dupQ = await db
-    .collection('shift_records')
-    .where({
-      store_id: storeId,
-      record_date: recordDate,
-      shift_config_id: shiftConfigId,
-      id: _.neq(recordId),
-    })
-    .limit(1)
-    .get();
-  if (dupQ.data.length) {
-    return fail(400, '该日期该班次已有其他记录，不能改为此组合');
-  }
-
   var recName = payload.recorder_name != null ? String(payload.recorder_name).trim() : '';
   if (!recName || recName.length > 32) {
     return fail(400, '请选择或填写记账姓名（1～32 字）');
@@ -1978,6 +1950,97 @@ async function handleUpdateRecord(openid, payload) {
   );
 }
 
+async function handleDeleteRecord(openid, payload) {
+  var u = await requireUser(openid);
+  if (!u) return fail(401, '未登录或用户无效');
+  var ctx = await requireActiveStoreId(openid, u);
+  if (ctx.err) return ctx.err;
+  var storeId = ctx.storeId;
+  var role = await requireStoreMembership(u.userId, storeId);
+  if (role !== 1) return fail(403, '仅门店管理员可删除记录');
+
+  var recordId = parseInt(payload.id, 10);
+  if (!recordId || recordId <= 0) return fail(400, '缺少记录 id');
+
+  var recSnap = await db.collection('shift_records').where({ store_id: storeId, id: recordId }).limit(1).get();
+  if (!recSnap.data.length) return fail(404, '记录不存在');
+  var row = recSnap.data[0];
+  var recDocId = row._id;
+
+  var oldDeduct = stockDeductFromQtys(
+    row.qty_opening,
+    row.qty_closing,
+    row.qty_gift,
+    row.sold_wechat,
+    row.sold_alipay,
+    row.sold_cash
+  );
+  var unitPrice = (row.unit_price != null && !Number.isNaN(parseFloat(row.unit_price)))
+    ? parseFloat(row.unit_price)
+    : ITEM_UNIT_PRICE_JPY;
+  var oldCashDelta = (row.sold_cash || 0) * unitPrice;
+  var stockDelta = oldDeduct;
+  var cashDelta = -oldCashDelta;
+  var needLedger = stockDelta !== 0 || cashDelta !== 0;
+  var ledgerId = needLedger ? await nextSeq('stock_ledger') : null;
+
+  var stQ = await db.collection('stores').where({ id: storeId }).limit(1).get();
+  if (!stQ.data.length) return fail(500, '门店信息不存在');
+  var storeDbId = stQ.data[0]._id;
+
+  var txResult;
+  try {
+    txResult = await db.runTransaction(async function (tx) {
+      var stSnap = await tx.collection('stores').doc(storeDbId).get();
+      if (!stSnap || !stSnap.data) {
+        var miss = new Error('STORE_MISSING');
+        miss._user = { code: 500, msg: '门店信息不存在' };
+        throw miss;
+      }
+      var liveStock = stSnap.data.current_stock != null ? stSnap.data.current_stock : 0;
+      var liveCash = stSnap.data.current_cash != null ? stSnap.data.current_cash : 0;
+      var nextStock = liveStock + stockDelta;
+      var nextCash = liveCash + cashDelta;
+
+      await tx.collection('shift_records').doc(recDocId).remove();
+
+      if (needLedger) {
+        await tx.collection('stores').doc(storeDbId).update({
+          data: { current_stock: nextStock, current_cash: nextCash, updated_at: db.serverDate() },
+        });
+        await insertStockLedgerEntryTx(
+          tx,
+          ledgerId,
+          storeId,
+          u.userId,
+          'record_delete',
+          stockDelta,
+          nextStock,
+          cashDelta,
+          nextCash,
+          recordId,
+          '删除记账'
+        );
+      }
+
+      return { nextStock: nextStock, nextCash: nextCash };
+    });
+  } catch (err) {
+    if (err && err._user) return fail(err._user.code, err._user.msg);
+    console.error('[deleteRecord] tx failed', err);
+    return fail(500, '删除失败，已自动回滚，请稍后重试');
+  }
+
+  return ok(
+    {
+      id: recordId,
+      current_stock: txResult.nextStock,
+      current_cash: txResult.nextCash,
+    },
+    '已删除记录'
+  );
+}
+
 async function handleStoreMemberRemove(openid, payload) {
   var u = await requireUser(openid);
   if (!u) return fail(401, '未登录或用户无效');
@@ -2072,6 +2135,7 @@ exports.main = async function (event, context) {
       get_records: 'getRecords',
       get_record: 'getRecord',
       update_record: 'updateRecord',
+      delete_record: 'deleteRecord',
       store_member_remove: 'storeMemberRemove',
       store_member_set_role: 'storeMemberSetRole',
     };
@@ -2121,6 +2185,8 @@ exports.main = async function (event, context) {
         return await handleGetRecord(OPENID, payload);
       case 'updateRecord':
         return await handleUpdateRecord(OPENID, payload);
+      case 'deleteRecord':
+        return await handleDeleteRecord(OPENID, payload);
       case 'storeMemberRemove':
         return await handleStoreMemberRemove(OPENID, payload);
       case 'storeMemberSetRole':

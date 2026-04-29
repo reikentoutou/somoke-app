@@ -37,7 +37,8 @@ const EVENT_META: Record<LedgerEventType, EventMeta> = {
   adjust_stock: { category: 'adjust', label: '库存校准', tone: 'adjust', initial: '校' },
   adjust_cash: { category: 'adjust', label: '现金校准', tone: 'adjust', initial: '校' },
   record_add: { category: 'record', label: '班次记账', tone: 'record', initial: '记' },
-  record_update: { category: 'record', label: '修改记账', tone: 'record', initial: '改' }
+  record_update: { category: 'record', label: '修改记账', tone: 'record', initial: '改' },
+  record_delete: { category: 'record', label: '删除记账', tone: 'record', initial: '删' }
 }
 
 const DEFAULT_META: EventMeta = {

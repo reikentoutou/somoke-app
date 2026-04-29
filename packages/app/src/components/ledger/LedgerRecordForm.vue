@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
 import type { AddRecordRes, ShiftRecord, UpdateRecordRes } from '@somoke/shared'
-import { recordApi } from '@/api'
+import { rpc } from '@/api/client'
 import { useLedgerDependencies } from '@/composables/useLedgerDependencies'
 import { useLedgerForm } from '@/composables/useLedgerForm'
 import { useSubmitLock } from '@/composables/useSubmitLock'
@@ -13,6 +13,12 @@ import LedgerRecorderPicker from './LedgerRecorderPicker.vue'
 import LedgerOpeningClosingCard from './LedgerOpeningClosingCard.vue'
 import LedgerPaymentBreakdown from './LedgerPaymentBreakdown.vue'
 import LedgerSummaryCard from './LedgerSummaryCard.vue'
+
+/**
+ * 云函数调用固定经由此引用；勿与上方 `import { rpc }` 在压缩后共用一个短名（如 `r`），
+ * 否则会与 `new Promise(r => …)` / 模态结果变量撞名，运行时报 `Cannot read property 'rpc' of undefined`。
+ */
+const invokeCloudRpc = rpc
 
 /**
  * 录入/修改记账的容器组件。
@@ -175,21 +181,21 @@ async function confirmAndSubmit(): Promise<void> {
 
   const softWarns = summary.value.softWarnings
   if (softWarns.length > 0) {
-    const ok = await new Promise<boolean>(resolve => {
+    const ok = await new Promise<boolean>(resolveSoftWarn => {
       uni.showModal({
         title: '数据核对提醒',
         content: softWarns.join('\n\n'),
         confirmText: isEdit.value ? '仍要保存' : '仍要提交',
         cancelText: '返回修改',
-        success: res => resolve(!!res.confirm),
-        fail: () => resolve(false)
+        success: res => resolveSoftWarn(!!res.confirm),
+        fail: () => resolveSoftWarn(false)
       })
     })
     if (!ok) return
   }
 
   if (showZeroBanner.value) {
-    const choice = await new Promise<'submit' | 'calibrate' | 'cancel'>(resolve => {
+    const choice = await new Promise<'submit' | 'calibrate' | 'cancel'>(resolveZeroBanner => {
       uni.showModal({
         title: '门店尚未校准',
         content:
@@ -197,11 +203,11 @@ async function confirmAndSubmit(): Promise<void> {
         confirmText: '仍要提交',
         cancelText: '先去校准',
         success: res => {
-          if (res.confirm) resolve('submit')
-          else if (res.cancel) resolve('calibrate')
-          else resolve('cancel')
+          if (res.confirm) resolveZeroBanner('submit')
+          else if (res.cancel) resolveZeroBanner('calibrate')
+          else resolveZeroBanner('cancel')
         },
-        fail: () => resolve('cancel')
+        fail: () => resolveZeroBanner('cancel')
       })
     })
     if (choice === 'calibrate') {
@@ -219,12 +225,12 @@ async function doSubmit(): Promise<void> {
     try {
       if (isEdit.value) {
         const payload = buildUpdatePayload()
-        const res = await recordApi.updateRecord(payload)
+        const res = await invokeCloudRpc('updateRecord', payload)
         uni.showToast({ title: '已保存修改', icon: 'success', duration: 2200 })
         emit('submit-success', { mode: 'edit', data: res })
       } else {
         const payload = buildAddPayload()
-        const res = await recordApi.addRecord(payload)
+        const res = await invokeCloudRpc('addRecord', payload)
         const deduct = res.stock_deduct ?? 0
         const msg =
           deduct > 0 && res.current_stock != null
@@ -241,8 +247,9 @@ async function doSubmit(): Promise<void> {
         state.recorderName = selectedRecorder.value
         emit('submit-success', { mode: 'create', data: res })
       }
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error('提交失败，请重试')
+    } catch (submitErr) {
+      const e =
+        submitErr instanceof Error ? submitErr : new Error('提交失败，请重试')
       uni.showToast({ title: e.message, icon: 'none' })
       emit('submit-error', e)
     }

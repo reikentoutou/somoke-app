@@ -17,12 +17,13 @@ const shiftConfigId = defineModel<number | null>('shiftConfigId', { required: tr
 
 const shiftIndex = computed(() => {
   if (shiftConfigId.value == null) return 0
-  const ix = props.shifts.findIndex(s => s.id === shiftConfigId.value)
+  const list = props.shifts ?? []
+  const ix = list.findIndex(s => s.id === shiftConfigId.value)
   return ix < 0 ? 0 : ix
 })
 
 const shiftLabel = computed(() => {
-  const hit = props.shifts[shiftIndex.value]
+  const hit = (props.shifts ?? [])[shiftIndex.value]
   return hit?.name ?? '请选择'
 })
 
@@ -34,7 +35,8 @@ function onDatePick(e: Event) {
 function onShiftPick(e: Event) {
   const raw = (e as unknown as { detail?: { value?: string | number } }).detail?.value ?? 0
   const ix = Number.parseInt(String(raw), 10)
-  const hit = props.shifts[Number.isFinite(ix) ? ix : 0]
+  const list = props.shifts ?? []
+  const hit = list[Number.isFinite(ix) ? ix : 0]
   shiftConfigId.value = hit ? hit.id : null
 }
 </script>
@@ -50,9 +52,9 @@ function onShiftPick(e: Event) {
     <view class="cell">
       <text class="label">所属班次</text>
       <picker
-        v-if="shifts.length"
+        v-if="(shifts || []).length"
         mode="selector"
-        :range="shifts"
+        :range="shifts || []"
         range-key="name"
         :value="shiftIndex"
         @change="onShiftPick"

@@ -46,7 +46,7 @@ const revenueText = computed(() => {
 
     <view v-if="summary.hasSoftWarnings" class="warn">
       <text class="warn-title">核对提醒（仍可提交）</text>
-      <text v-for="(line, idx) in summary.softWarnings" :key="idx" class="warn-line">
+      <text v-for="(line, idx) in summary.softWarnings || []" :key="idx" class="warn-line">
         · {{ line }}
       </text>
     </view>

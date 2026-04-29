@@ -81,6 +81,7 @@ export interface ShiftRecord {
 export type LedgerEventType =
   | 'record_add'
   | 'record_update'
+  | 'record_delete'
   | 'restock'
   | 'withdraw'
   | 'adjust_stock'

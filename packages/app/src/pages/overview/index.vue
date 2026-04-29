@@ -2,7 +2,7 @@
 import { computed, ref, shallowRef } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import type { ShiftRecord } from '@somoke/shared'
-import { recordApi } from '@/api'
+import { getRecords } from '@/api/endpoints/record'
 import { useSession } from '@/composables/useSession'
 import { useLoadSeq } from '@/composables/useLoadSeq'
 import { useCurrentStore } from '@/composables/useCurrentStore'
@@ -121,7 +121,7 @@ async function loadToday(): Promise<void> {
   const today = formatDate(new Date())
   todayDate.value = today
   try {
-    const res = await recordApi.getRecords({ date: today })
+    const res = await getRecords({ date: today })
     if (loadSeq.isStale(seq)) return
     const s = res.summary ?? null
     summary.value = {

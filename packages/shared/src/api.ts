@@ -251,6 +251,16 @@ export interface UpdateRecordRes {
   current_cash: number
 }
 
+/** deleteRecord：仅管理员可删除；删除后会回滚库存/现金并记流水 */
+export interface DeleteRecordReq extends SessionHeader {
+  id: number
+}
+export interface DeleteRecordRes {
+  id: number
+  current_stock: number
+  current_cash: number
+}
+
 /** recorderNameAdd */
 export interface RecorderNameAddReq extends SessionHeader {
   name: string
@@ -365,6 +375,7 @@ export interface Contract {
   getRecord: { req: GetRecordReq; res: GetRecordRes }
   addRecord: { req: AddRecordReq; res: AddRecordRes }
   updateRecord: { req: UpdateRecordReq; res: UpdateRecordRes }
+  deleteRecord: { req: DeleteRecordReq; res: DeleteRecordRes }
   recorderNameAdd: { req: RecorderNameAddReq; res: RecorderNameAddRes }
   recorderNameDelete: { req: RecorderNameDeleteReq; res: RecorderNameDeleteRes }
   getStoreMembers: { req: GetStoreMembersReq; res: GetStoreMembersRes }

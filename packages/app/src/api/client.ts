@@ -14,7 +14,32 @@ const TOKEN_KEY = 'token'
 const USER_INFO_KEY = 'userInfo'
 const CURRENT_STORE_KEY = 'currentStoreId'
 
-const REQUEST_TIMEOUT_MS = 15_000
+/**
+ * 须与云函数 `cloudfunctions/api/config.json` 的 timeout（秒）对齐或略小。
+ * 之前 15s 过短，冷启动 + DB 事务易在服务端未返回前即客户端超时。
+ */
+const REQUEST_TIMEOUT_MS = 60_000
+
+/** 写操作超时后不自动重试，避免首请求已成功但响应丢失时产生二次副作用 */
+const NO_CLOUD_RETRY_ON_TIMEOUT: ReadonlySet<ActionName> = new Set([
+  'addRecord',
+  'updateRecord',
+  'deleteRecord',
+  'stockAdjust',
+  'opsAction',
+  'storeCreate',
+  'storeSwitch',
+  'storeJoin',
+  'storeUpdate',
+  'storeDelete',
+  'shiftConfigSave',
+  'shiftConfigDelete',
+  'recorderNameAdd',
+  'recorderNameDelete',
+  'storeMemberRemove',
+  'storeMemberSetRole',
+  'storeInviteCreate'
+])
 
 /** 写操作成功后要失效的前缀（迁自 miniprogram/utils/request.js 的 CACHE_INVALIDATE_BY_ACTION） */
 const INVALIDATE_ON_SUCCESS: Partial<Record<ActionName, readonly string[]>> = {
@@ -29,6 +54,7 @@ const INVALIDATE_ON_SUCCESS: Partial<Record<ActionName, readonly string[]>> = {
   storeJoin: ['shifts:', 'storeDetail:'],
   addRecord: ['storeDetail:'],
   updateRecord: ['storeDetail:'],
+  deleteRecord: ['storeDetail:'],
   stockAdjust: ['storeDetail:'],
   opsAction: ['storeDetail:']
 }
@@ -129,7 +155,11 @@ export async function rpc<K extends ActionName>(action: K, payload: ReqOf<K>): P
   try {
     res = await callCloudOnce(action, payload)
   } catch (err) {
-    if (err instanceof Error && err.message.includes('请求超时')) {
+    if (
+      err instanceof Error &&
+      err.message.includes('请求超时') &&
+      !NO_CLOUD_RETRY_ON_TIMEOUT.has(action)
+    ) {
       res = await callCloudOnce(action, payload)
     } else {
       throw err
