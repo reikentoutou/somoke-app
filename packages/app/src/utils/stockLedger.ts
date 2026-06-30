@@ -52,6 +52,7 @@ export interface LedgerViewItem {
   id: number
   category: Exclude<LedgerCategory, 'all'>
   typeLabel: string
+  productName: string
   tone: BadgeTone
   initial: string
   hasStock: boolean
@@ -88,6 +89,7 @@ export function decorateLedgerEntry(row: LedgerEntry): LedgerViewItem {
     id: row.id,
     category: meta.category,
     typeLabel: meta.label,
+    productName: row.product_name || '',
     tone: meta.tone,
     initial: meta.initial,
     hasStock: delta !== 0 || row.event_type === 'adjust_stock',

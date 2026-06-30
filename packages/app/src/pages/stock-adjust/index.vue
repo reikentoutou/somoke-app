@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { ledgerApi, storeApi } from '@/api'
+import type { Product } from '@somoke/shared'
+import { ledgerApi, productApi } from '@/api'
 import { useSession } from '@/composables/useSession'
 import { useSubmitLock } from '@/composables/useSubmitLock'
 import PageState from '@/components/PageState.vue'
@@ -20,21 +21,30 @@ const MAX_STOCK = 10_000_000
 
 const stockLoading = ref(true)
 const loadError = ref('')
+const products = ref<Product[]>([])
+const productIndex = ref(0)
 const currentStock = ref(0)
 const targetStock = ref('')
 const note = ref('')
 
 const submitting = computed(() => submitLock.running.value)
+const selectedProduct = computed(() => products.value[productIndex.value] ?? null)
+
+function syncSelectedProductStock(): void {
+  const hit = selectedProduct.value
+  const safe = hit ? Math.max(0, Math.floor(Number(hit.current_stock) || 0)) : 0
+  currentStock.value = safe
+  targetStock.value = hit ? String(safe) : ''
+}
 
 async function loadCurrentStock(): Promise<void> {
   stockLoading.value = true
   loadError.value = ''
   try {
-    const res = await storeApi.getStoreDetail({})
-    const n = Number(res.current_stock)
-    const safe = Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0
-    currentStock.value = safe
-    targetStock.value = String(safe)
+    const res = await productApi.listProductCatalog({})
+    products.value = (res.products ?? []).filter(p => p.is_active !== 0 && p.is_deleted !== 1)
+    productIndex.value = 0
+    syncSelectedProductStock()
   } catch (err) {
     const msg = errorMessage(err, '加载失败')
     loadError.value = msg
@@ -58,7 +68,21 @@ onShow(() => {
   void loadCurrentStock()
 })
 
+function onProductPick(e: Event): void {
+  const raw = (e as unknown as { detail?: { value?: string | number } }).detail?.value ?? 0
+  const ix = Number.parseInt(String(raw), 10)
+  productIndex.value = Number.isFinite(ix)
+    ? Math.max(0, Math.min(ix, products.value.length - 1))
+    : 0
+  syncSelectedProductStock()
+}
+
 function onSubmit(): void {
+  const product = selectedProduct.value
+  if (!product) {
+    uni.showToast({ title: '请选择商品', icon: 'none' })
+    return
+  }
   const target = Number.parseInt((targetStock.value ?? '').trim(), 10)
   if (!Number.isFinite(target) || target < 0) {
     uni.showToast({ title: '请输入有效的实盘件数', icon: 'none' })
@@ -72,12 +96,15 @@ function onSubmit(): void {
   void submitLock.guard(async () => {
     try {
       const res = await ledgerApi.adjustStock({
+        product_id: product.id,
         target_stock: target,
         note: note.value.trim()
       })
-      const next = Number.isFinite(Number(res.current_stock)) ? Number(res.current_stock) : target
-      currentStock.value = next
-      targetStock.value = String(next)
+      currentStock.value = target
+      targetStock.value = String(target)
+      products.value = products.value.map(p =>
+        p.id === product.id ? { ...p, current_stock: target } : p
+      )
       note.value = ''
       uni.showToast({
         title: res.skipped ? '未变化' : '已校准',
@@ -94,12 +121,27 @@ function onSubmit(): void {
 <template>
   <view class="page">
     <text class="hint">
-      将下方「实盘库存」填为当前仓库实际件数，保存后系统库存会与此一致，并记一条流水（与补货、记账区分）。
+      先选择商品，再将「实盘库存」填为该商品当前实际件数。保存后会更新商品库存和门店总库存，并记一条流水。
     </text>
 
     <PageState :loading="stockLoading" :error="loadError" loading-text="加载当前库存…">
       <view class="card">
-        <text class="label">系统当前库存</text>
+        <text class="label">商品</text>
+        <picker
+          v-if="products.length"
+          mode="selector"
+          :range="products"
+          range-key="name"
+          :value="productIndex"
+          @change="onProductPick"
+        >
+          <view class="picker-val">{{ selectedProduct?.name || '请选择商品' }}</view>
+        </picker>
+        <text v-else class="empty-products">暂无启用商品，请先在设置中添加商品。</text>
+      </view>
+
+      <view class="card">
+        <text class="label">该商品当前库存</text>
         <text class="headline">{{ currentStock }} 件</text>
       </view>
 
@@ -165,6 +207,19 @@ function onSubmit(): void {
   border-bottom: 2rpx solid #e8e8ea;
   font-size: 32rpx;
   color: #1a1c1d;
+}
+.picker-val {
+  width: 100%;
+  padding: 16rpx 0;
+  border-bottom: 2rpx solid #e8e8ea;
+  font-size: 32rpx;
+  color: #1a1c1d;
+}
+.empty-products {
+  display: block;
+  color: #8a8a8f;
+  font-size: 26rpx;
+  line-height: 1.45;
 }
 .textarea {
   width: 100%;

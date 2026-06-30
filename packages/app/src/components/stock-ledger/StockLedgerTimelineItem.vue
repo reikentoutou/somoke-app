@@ -46,6 +46,10 @@ const toneClass = computed(() => `tone-${props.item.tone}`)
         <text class="metric-balance">结余 {{ item.balanceAfter }} 件</text>
       </view>
 
+      <view v-if="item.productName" class="product-chip">
+        <text>商品 {{ item.productName }}</text>
+      </view>
+
       <view v-if="item.hasCash" class="metric">
         <text class="metric-label">现金</text>
         <text :class="['metric-delta', deltaToneCash]">{{ item.cashDeltaDisplay }}</text>
@@ -225,6 +229,16 @@ const toneClass = computed(() => `tone-${props.item.tone}`)
 .metric-balance {
   font-size: 22rpx;
   color: #6e6e73;
+}
+.product-chip {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
+  background: #eef7f2;
+  color: #12613d;
+  font-size: 22rpx;
 }
 
 .meta {

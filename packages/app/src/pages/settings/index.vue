@@ -83,6 +83,9 @@ function goStoreSwitch() {
 function goShifts() {
   uni.navigateTo({ url: '/pages/settings-shifts/index' })
 }
+function goProducts() {
+  uni.navigateTo({ url: '/pages/settings-products/index' })
+}
 function goRecorders() {
   uni.navigateTo({ url: '/pages/settings-recorders/index' })
 }
@@ -165,6 +168,7 @@ function onLogout() {
 
     <SettingsGroup label="管理">
       <SettingsRow icon="班" label="班次设置" :trailing="shiftSummary" @select="goShifts" />
+      <SettingsRow icon="商" label="商品管理" sub="分类与价格" divider @select="goProducts" />
       <SettingsRow
         icon="名"
         label="记账姓名"

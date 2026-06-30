@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref, shallowRef } from 'vue'
 import { onShow, onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app'
-import type { LedgerEntry } from '@somoke/shared'
-import { ledgerApi, storeApi } from '@/api'
+import type { LedgerEntry, Product } from '@somoke/shared'
+import { ledgerApi, productApi, storeApi } from '@/api'
 import { useSession } from '@/composables/useSession'
 import { usePagination } from '@/composables/usePagination'
 import { useSubmitLock } from '@/composables/useSubmitLock'
@@ -44,6 +44,7 @@ const store = ref<{ current_stock: number; current_cash: number }>({
 
 const category = ref<LedgerCategory>('all')
 const raw = shallowRef<LedgerEntry[]>([])
+const products = shallowRef<Product[]>([])
 
 const pager = usePagination<LedgerEntry>(cursor =>
   ledgerApi.listLedger({ cursor: cursor ?? null, limit: PAGE_SIZE }).then(r => ({
@@ -67,14 +68,22 @@ const hasMore = computed(() => pager.hasMore.value)
 const pageError = computed(() => pager.error.value)
 
 async function fetchAll(): Promise<void> {
-  try {
-    const detail = await storeApi.getStoreDetail({})
+  const detailPromise = storeApi.getStoreDetail({})
+  const catalogPromise = productApi.listProductCatalog({})
+  const results = await Promise.allSettled([detailPromise, catalogPromise])
+  const detailResult = results[0]
+  if (detailResult.status === 'fulfilled') {
+    const detail = detailResult.value
     store.value = {
       current_stock: Number(detail.current_stock) || 0,
       current_cash: Number(detail.current_cash) || 0
     }
-  } catch {
-    // 不阻塞 ledger 列表加载；失败时保留上次数值或 0
+  }
+  const catalogResult = results[1]
+  if (catalogResult.status === 'fulfilled') {
+    products.value = (catalogResult.value.products ?? []).filter(
+      p => p.is_active !== 0 && p.is_deleted !== 1
+    )
   }
   await pager.refresh()
   syncPagerToRaw()
@@ -105,6 +114,7 @@ onReachBottom(() => {
 const modal = reactive({
   visible: false,
   action: 'restock' as OpsActionKey,
+  productId: 0,
   valStock: '',
   valCash: '',
   note: ''
@@ -115,6 +125,7 @@ const submitting = computed(() => submitLock.running.value)
 
 function openModal(key: OpsActionKey) {
   modal.action = key
+  modal.productId = key === 'restock' || key === 'adjust_stock' ? (products.value[0]?.id ?? 0) : 0
   modal.valStock = ''
   modal.valCash = ''
   modal.note = ''
@@ -134,12 +145,20 @@ async function onSubmit(): Promise<void> {
     uni.showToast({ title: v.message || ACTION_CONFIG[modal.action].invalidMessage, icon: 'none' })
     return
   }
+  if ((modal.action === 'restock' || modal.action === 'adjust_stock') && !modal.productId) {
+    uni.showToast({ title: '请选择商品', icon: 'none' })
+    return
+  }
 
   await submitLock.guard(async () => {
     uni.showLoading({ title: '提交中', mask: true })
     try {
       const res = await ledgerApi.opsAction({
         action_type: modal.action,
+        product_id:
+          modal.action === 'restock' || modal.action === 'adjust_stock'
+            ? modal.productId
+            : undefined,
         val_stock: v.val_stock,
         val_cash: v.val_cash,
         note: modal.note.trim()
@@ -205,8 +224,10 @@ async function onSubmit(): Promise<void> {
       v-model:visible="modal.visible"
       v-model:val-stock="modal.valStock"
       v-model:val-cash="modal.valCash"
+      v-model:product-id="modal.productId"
       v-model:note="modal.note"
       :action="modal.action"
+      :products="products"
       :submitting="submitting"
       @submit="onSubmit"
     />

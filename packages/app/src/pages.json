@@ -18,6 +18,7 @@
     { "path": "pages/settings/index", "style": { "navigationBarTitleText": "设置" } },
     { "path": "pages/profile-edit/index", "style": { "navigationBarTitleText": "编辑资料" } },
     { "path": "pages/settings-shifts/index", "style": { "navigationBarTitleText": "班次管理" } },
+    { "path": "pages/settings-products/index", "style": { "navigationBarTitleText": "商品管理" } },
     {
       "path": "pages/settings-recorders/index",
       "style": { "navigationBarTitleText": "记账员管理" }

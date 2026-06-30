@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { Product } from '@somoke/shared'
 import { ACTION_CONFIG, type OpsActionKey } from '@/utils/stockLedger'
 
 /**
@@ -12,6 +13,7 @@ import { ACTION_CONFIG, type OpsActionKey } from '@/utils/stockLedger'
 
 interface Props {
   action: OpsActionKey
+  products: Product[]
   submitting?: boolean
 }
 const props = withDefaults(defineProps<Props>(), { submitting: false })
@@ -20,11 +22,23 @@ const visible = defineModel<boolean>('visible', { required: true })
 const valStock = defineModel<string>('valStock', { default: '' })
 const valCash = defineModel<string>('valCash', { default: '' })
 const note = defineModel<string>('note', { default: '' })
+const productId = defineModel<number>('productId', { default: 0 })
 
 const emit = defineEmits<{ (e: 'submit'): void; (e: 'close'): void }>()
 
 const cfg = computed(() => ACTION_CONFIG[props.action])
 const useStockInput = computed(() => cfg.value.inputType === 'stock')
+const productIndex = computed(() => {
+  const ix = props.products.findIndex(p => p.id === productId.value)
+  return ix < 0 ? 0 : ix
+})
+
+function onProductPick(e: Event) {
+  const raw = (e as unknown as { detail?: { value?: string | number } }).detail?.value ?? 0
+  const ix = Number.parseInt(String(raw), 10)
+  const hit = props.products[Number.isFinite(ix) ? ix : 0]
+  productId.value = hit ? hit.id : 0
+}
 
 function onMaskTap() {
   if (!props.submitting) {
@@ -54,6 +68,21 @@ function onConfirm() {
       </view>
 
       <view class="body">
+        <view v-if="useStockInput" class="group">
+          <text class="label">商品</text>
+          <picker
+            v-if="products.length"
+            mode="selector"
+            :range="products"
+            range-key="name"
+            :value="productIndex"
+            @change="onProductPick"
+          >
+            <view class="picker-val">{{ products[productIndex]?.name || '请选择商品' }}</view>
+          </picker>
+          <view v-else class="picker-val picker-empty">暂无启用商品</view>
+        </view>
+
         <view class="group">
           <text class="label">{{ cfg.inputLabel }}</text>
           <input
@@ -153,6 +182,21 @@ function onConfirm() {
   box-sizing: border-box;
   font-size: 32rpx;
   color: #1a1c1d;
+}
+.picker-val {
+  width: 100%;
+  min-height: 96rpx;
+  background: #f3f3f5;
+  border-radius: 24rpx;
+  padding: 0 32rpx;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  font-size: 30rpx;
+  color: #1a1c1d;
+}
+.picker-empty {
+  color: #8a8a8f;
 }
 .foot {
   display: flex;

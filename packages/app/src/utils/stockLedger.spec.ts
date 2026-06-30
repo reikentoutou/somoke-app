@@ -15,6 +15,8 @@ const baseEntry: LedgerEntry = {
   balance_after: 90,
   cash_delta: 1000,
   cash_balance_after: 11000,
+  product_id: 1,
+  product_name: '默认商品',
   time_display: '04-20 12:00',
   shift_date: '2026-04-20',
   shift_name: '早班',
@@ -41,6 +43,7 @@ describe('stockLedger utils', () => {
     expect(v.stockDeltaDisplay).toBe('-10')
     expect(v.cashDeltaDisplay).toBe('+1000')
     expect(v.shiftChip).toBe('04-20 · 早班')
+    expect(v.productName).toBe('默认商品')
     expect(v.hasStock).toBe(true)
     expect(v.hasCash).toBe(true)
   })
