@@ -9,6 +9,9 @@ import {
   parseCashInput,
   parseIntField,
   shiftIndexForConfigId,
+  stockDeductFromLine,
+  validateProductLinesAndCash,
+  validateProductStockAvailability,
   validateRequiredQtyAndCash,
   type LedgerFormFields
 } from './ledgerForm'
@@ -115,6 +118,150 @@ describe('computeSummary', () => {
   it('营业额 = 支付合计 × 单价', () => {
     const s = computeSummary(mkFields({ soldWechat: '1', soldAlipay: '1', soldCash: '1' }))
     expect(s.totalRevenueJpy).toBe(3 * ITEM_UNIT_PRICE_JPY)
+  })
+
+  it('多商品营业额按各商品单价汇总', () => {
+    const s = computeSummary(mkFields({ cashOpening: '0', cashClosing: '0' }), [
+      {
+        productId: 1,
+        productName: 'A',
+        categoryId: 1,
+        categoryName: '默认分类',
+        unitPrice: 3000,
+        currentStock: 10,
+        qtyOpening: '10',
+        qtyClosing: '8',
+        qtyGift: '',
+        soldWechat: '1',
+        soldAlipay: '',
+        soldCash: '1'
+      },
+      {
+        productId: 2,
+        productName: 'B',
+        categoryId: 1,
+        categoryName: '默认分类',
+        unitPrice: 5000,
+        currentStock: 10,
+        qtyOpening: '10',
+        qtyClosing: '9',
+        qtyGift: '',
+        soldWechat: '',
+        soldAlipay: '1',
+        soldCash: ''
+      }
+    ])
+    expect(s.qtySold).toBe(3)
+    expect(s.paymentSoldTotal).toBe(3)
+    expect(s.totalRevenueJpy).toBe(11000)
+    expect(s.productRows.map(r => r.totalRevenueJpy)).toEqual([6000, 5000])
+  })
+
+  it('多商品现金提醒按整班现金售出合计判断', () => {
+    const s = computeSummary(mkFields({ cashOpening: '0', cashClosing: '3000' }), [
+      {
+        productId: 1,
+        productName: 'A',
+        categoryId: 1,
+        categoryName: '默认分类',
+        unitPrice: 3000,
+        currentStock: 10,
+        qtyOpening: '10',
+        qtyClosing: '9',
+        qtyGift: '',
+        soldWechat: '',
+        soldAlipay: '',
+        soldCash: '1'
+      },
+      {
+        productId: 2,
+        productName: 'B',
+        categoryId: 1,
+        categoryName: '默认分类',
+        unitPrice: 5000,
+        currentStock: 10,
+        qtyOpening: '10',
+        qtyClosing: '10',
+        qtyGift: '',
+        soldWechat: '',
+        soldAlipay: '',
+        soldCash: ''
+      }
+    ])
+
+    expect(s.softWarnings.some(line => line.includes('未登记现金售出件数'))).toBe(false)
+  })
+})
+
+describe('validateProductLinesAndCash', () => {
+  it('要求至少一个商品行和现金字段', () => {
+    expect(validateProductLinesAndCash([], { cashOpening: '0', cashClosing: '0' }).ok).toBe(false)
+    const r = validateProductLinesAndCash(
+      [
+        {
+          productId: 1,
+          productName: 'A',
+          categoryId: 1,
+          categoryName: '默认分类',
+          unitPrice: 3000,
+          currentStock: 10,
+          qtyOpening: '10',
+          qtyClosing: '9',
+          qtyGift: '',
+          soldWechat: '1',
+          soldAlipay: '',
+          soldCash: ''
+        }
+      ],
+      { cashOpening: '0', cashClosing: '3000' }
+    )
+    expect(r.ok).toBe(true)
+  })
+
+  it('创建态商品库存不足时阻止提交前校验', () => {
+    const r = validateProductLinesAndCash(
+      [
+        {
+          productId: 1,
+          productName: 'A',
+          categoryId: 1,
+          categoryName: '默认分类',
+          unitPrice: 3000,
+          currentStock: 5,
+          qtyOpening: '5',
+          qtyClosing: '0',
+          qtyGift: '',
+          soldWechat: '6',
+          soldAlipay: '',
+          soldCash: ''
+        }
+      ],
+      { cashOpening: '0', cashClosing: '3000' },
+      { enforceCurrentStock: true }
+    )
+
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('库存不足')
+  })
+
+  it('库存校验按盘点售出、支付件数和赠送的最大扣减计算', () => {
+    const line = {
+      productId: 1,
+      productName: 'A',
+      categoryId: 1,
+      categoryName: '默认分类',
+      unitPrice: 3000,
+      currentStock: 5,
+      qtyOpening: '5',
+      qtyClosing: '3',
+      qtyGift: '1',
+      soldWechat: '4',
+      soldAlipay: '',
+      soldCash: ''
+    }
+
+    expect(stockDeductFromLine(line)).toBe(5)
+    expect(validateProductStockAvailability([line]).ok).toBe(true)
   })
 })
 

@@ -10,8 +10,25 @@ import {
   setMemberRole
 } from './endpoints/member'
 import { addRecord, deleteRecord, getRecord, getRecords, updateRecord } from './endpoints/record'
+import {
+  deleteProduct,
+  deleteProductCategory,
+  disableProduct,
+  disableProductCategory,
+  listProductCatalog,
+  saveProduct,
+  saveProductCategory
+} from './endpoints/product'
 import { deleteShift, getShifts, saveShift } from './endpoints/shift'
-import { createStore, deleteStore, getStoreDetail, getStores, joinStore, switchStore, updateStore } from './endpoints/store'
+import {
+  createStore,
+  deleteStore,
+  getStoreDetail,
+  getStores,
+  joinStore,
+  switchStore,
+  updateStore
+} from './endpoints/store'
 
 export const authApi = { login, updateProfile }
 export const ledgerApi = { listLedger, adjustStock, opsAction }
@@ -24,6 +41,15 @@ export const memberApi = {
   createInvite
 }
 export const recordApi = { getRecords, getRecord, addRecord, updateRecord, deleteRecord }
+export const productApi = {
+  listProductCatalog,
+  saveProductCategory,
+  disableProductCategory,
+  deleteProductCategory,
+  saveProduct,
+  disableProduct,
+  deleteProduct
+}
 export const shiftApi = { getShifts, saveShift, deleteShift }
 export const storeApi = {
   getStores,

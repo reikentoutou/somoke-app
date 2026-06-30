@@ -38,25 +38,38 @@ const NO_CLOUD_RETRY_ON_TIMEOUT: ReadonlySet<ActionName> = new Set([
   'recorderNameDelete',
   'storeMemberRemove',
   'storeMemberSetRole',
-  'storeInviteCreate'
+  'storeInviteCreate',
+  'productCategorySave',
+  'productCategoryDisable',
+  'productCategoryDelete',
+  'productSave',
+  'productDisable',
+  'productDelete'
 ])
 
 /** 写操作成功后要失效的前缀（迁自 miniprogram/utils/request.js 的 CACHE_INVALIDATE_BY_ACTION） */
 const INVALIDATE_ON_SUCCESS: Partial<Record<ActionName, readonly string[]>> = {
+  login: ['shifts:', 'storeDetail:', 'productCatalog:'],
   shiftConfigSave: ['shifts:'],
   shiftConfigDelete: ['shifts:'],
   recorderNameAdd: ['storeDetail:'],
   recorderNameDelete: ['storeDetail:'],
-  storeSwitch: ['shifts:', 'storeDetail:'],
-  storeCreate: ['shifts:', 'storeDetail:'],
+  storeSwitch: ['shifts:', 'storeDetail:', 'productCatalog:'],
+  storeCreate: ['shifts:', 'storeDetail:', 'productCatalog:'],
   storeUpdate: ['storeDetail:'],
-  storeDelete: ['shifts:', 'storeDetail:'],
-  storeJoin: ['shifts:', 'storeDetail:'],
-  addRecord: ['storeDetail:'],
-  updateRecord: ['storeDetail:'],
-  deleteRecord: ['storeDetail:'],
-  stockAdjust: ['storeDetail:'],
-  opsAction: ['storeDetail:']
+  storeDelete: ['shifts:', 'storeDetail:', 'productCatalog:'],
+  storeJoin: ['shifts:', 'storeDetail:', 'productCatalog:'],
+  addRecord: ['storeDetail:', 'productCatalog:'],
+  updateRecord: ['storeDetail:', 'productCatalog:'],
+  deleteRecord: ['storeDetail:', 'productCatalog:'],
+  stockAdjust: ['storeDetail:', 'productCatalog:'],
+  opsAction: ['storeDetail:', 'productCatalog:'],
+  productCategorySave: ['productCatalog:'],
+  productCategoryDisable: ['productCatalog:'],
+  productCategoryDelete: ['productCatalog:', 'storeDetail:'],
+  productSave: ['productCatalog:', 'storeDetail:'],
+  productDisable: ['productCatalog:'],
+  productDelete: ['productCatalog:', 'storeDetail:']
 }
 
 let reloggingInFlight = false

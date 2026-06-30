@@ -9,7 +9,6 @@ import { formatCash } from '@/utils/money'
  */
 interface Props {
   summary: LedgerSummary
-  unitPrice: number
 }
 const props = defineProps<Props>()
 
@@ -28,9 +27,7 @@ const revenueText = computed(() => {
         <text class="hint">支付渠道售出合计（件）</text>
         <text class="big">{{ summary.paymentSoldTotal }}</text>
       </view>
-      <text class="formula">
-        营业额 = {{ unitPrice }} 円/件 ×（微信+支付宝+现金）；赠送不计入
-      </text>
+      <text class="formula"> 营业额按每个商品的价格快照分别计算；赠送不计入收入 </text>
     </view>
 
     <view class="revenue">
@@ -42,6 +39,20 @@ const revenueText = computed(() => {
       <text class="inventory-text">
         盘点：上班−下班−赠送 = {{ summary.qtySold }} 件（与支付合计可对账）
       </text>
+    </view>
+
+    <view v-if="summary.productRows.length" class="product-list">
+      <view v-for="row in summary.productRows" :key="row.productId" class="product-row">
+        <view class="product-main">
+          <text class="product-name">{{ row.productName }}</text>
+          <text class="product-sub"
+            >{{ row.categoryName }} · 售出 {{ row.paymentSoldTotal }} 件</text
+          >
+        </view>
+        <text class="product-amount"
+          >{{ formatCash(row.totalRevenueJpy, '').replace(/\.00$/, '') }} 円</text
+        >
+      </view>
     </view>
 
     <view v-if="summary.hasSoftWarnings" class="warn">
@@ -108,6 +119,40 @@ const revenueText = computed(() => {
 .inventory-text {
   font-size: 22rpx;
   color: #8a8a8f;
+}
+.product-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  border-top: 2rpx solid #f3f3f5;
+  padding-top: 14rpx;
+}
+.product-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+.product-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+.product-name {
+  font-size: 24rpx;
+  color: #1a1c1d;
+  font-weight: 600;
+}
+.product-sub {
+  font-size: 22rpx;
+  color: #8a8a8f;
+}
+.product-amount {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  color: #237804;
+  font-weight: 600;
 }
 .warn {
   background: #fff7e6;

@@ -1,13 +1,17 @@
 import { computed, reactive, ref } from 'vue'
-import type { AddRecordReq, ShiftRecord, UpdateRecordReq } from '@somoke/shared'
+import type { AddRecordReq, Product, ShiftRecord, UpdateRecordReq } from '@somoke/shared'
 import {
+  buildRecordItemPayload,
   computeSummary,
   emptyFormFields,
   ITEM_UNIT_PRICE_JPY,
   parseCashInput,
+  productLineFromProduct,
+  productLineFromRecordItem,
   shiftIndexForConfigId,
   type LedgerFormFields,
-  type LedgerSummary
+  type LedgerSummary,
+  type ProductLedgerFormFields
 } from '@/utils/ledgerForm'
 
 export type LedgerFormMode = 'create' | 'edit'
@@ -19,6 +23,7 @@ export interface LedgerFormState {
   shiftConfigId: number | null
   recorderName: string
   fields: LedgerFormFields
+  items: ProductLedgerFormFields[]
   /** 已根据当前库存/现金预填过一次上班数据 */
   openingPrefilled: boolean
 }
@@ -46,6 +51,7 @@ export function useLedgerForm() {
     shiftConfigId: null,
     recorderName: '',
     fields: emptyFormFields(),
+    items: [],
     openingPrefilled: false
   })
 
@@ -53,7 +59,7 @@ export function useLedgerForm() {
   const lastPrefilledQty = ref<string | null>(null)
   const lastPrefilledCash = ref<string | null>(null)
 
-  const summary = computed<LedgerSummary>(() => computeSummary(state.fields))
+  const summary = computed<LedgerSummary>(() => computeSummary(state.fields, state.items))
 
   const isDateToday = computed(() => state.recordDate === today())
 
@@ -63,12 +69,17 @@ export function useLedgerForm() {
     state.shiftConfigId = null
     state.openingPrefilled = false
     state.fields = emptyFormFields()
+    state.items = []
     if (!keepDate) state.recordDate = today()
     lastPrefilledQty.value = null
     lastPrefilledCash.value = null
   }
 
-  function fillFromRecord(record: ShiftRecord, activeShiftIds: number[] = []): void {
+  function fillFromRecord(
+    record: ShiftRecord,
+    activeShiftIds: number[] = [],
+    products: Product[] = []
+  ): void {
     state.mode = 'edit'
     state.editRecordId = Number(record.id) || 0
     state.recordDate = record.record_date || today()
@@ -92,6 +103,28 @@ export function useLedgerForm() {
       cashOpening: n(record.cash_opening),
       cashClosing: n(record.cash_closing)
     }
+    const productStockMap = new Map(products.map(p => [p.id, Number(p.current_stock) || 0]))
+    state.items =
+      Array.isArray(record.items) && record.items.length
+        ? record.items.map(item =>
+            productLineFromRecordItem(item, productStockMap.get(item.product_id) ?? 0)
+          )
+        : [
+            {
+              productId: 0,
+              productName: '默认商品',
+              categoryId: 0,
+              categoryName: '默认分类',
+              unitPrice: Number(record.unit_price) || ITEM_UNIT_PRICE_JPY,
+              currentStock: 0,
+              qtyOpening: n(record.qty_opening),
+              qtyClosing: n(record.qty_closing),
+              qtyGift: n(record.qty_gift),
+              soldWechat: n(record.sold_wechat),
+              soldAlipay: n(record.sold_alipay),
+              soldCash: n(record.sold_cash)
+            }
+          ]
     state.openingPrefilled = false
     // 编辑态不再接受 prefill，置空即可
     lastPrefilledQty.value = null
@@ -122,6 +155,36 @@ export function useLedgerForm() {
     if (changed) state.openingPrefilled = true
   }
 
+  function setProducts(products: Product[], keepExisting = false): void {
+    const active = (products ?? []).filter(p => p.is_active !== 0 && p.is_deleted !== 1)
+    if (keepExisting && state.items.length) {
+      const byId = new Map(active.map(p => [p.id, p]))
+      state.items = state.items
+        .map(line => {
+          const p = byId.get(line.productId)
+          if (!p) return line
+          return {
+            ...line,
+            productName: p.name,
+            categoryId: p.category_id,
+            categoryName: p.category_name,
+            unitPrice: Number(p.unit_price) || 0,
+            currentStock: Number(p.current_stock) || 0
+          }
+        })
+        .filter(line => byId.has(line.productId))
+    } else {
+      state.items = active.map(productLineFromProduct)
+    }
+  }
+
+  function applyProductOpeningPrefill(): void {
+    if (state.mode !== 'create') return
+    for (const line of state.items) {
+      if (line.qtyOpening === '') line.qtyOpening = String(line.currentStock)
+    }
+  }
+
   /** 用户手动修改某字段 → 如果改动等于上次 prefill 值则维持锁，不等则解除 */
   function markManualEdit(field: keyof LedgerFormFields, value: string): void {
     if (field === 'qtyOpening' && value !== lastPrefilledQty.value) {
@@ -148,10 +211,12 @@ export function useLedgerForm() {
   }
 
   function buildAddPayload(): Omit<AddRecordReq, keyof { token?: string }> {
+    const items = state.items.map(buildRecordItemPayload)
     return {
       record_date: state.recordDate,
       shift_config_id: state.shiftConfigId ?? 0,
       recorder_name: state.recorderName,
+      items,
       qty_opening: toInt(state.fields.qtyOpening),
       qty_closing: toInt(state.fields.qtyClosing),
       qty_gift: toInt(state.fields.qtyGift),
@@ -164,6 +229,7 @@ export function useLedgerForm() {
   }
 
   function buildUpdatePayload(): Omit<UpdateRecordReq, keyof { token?: string }> {
+    const items = state.items.map(buildRecordItemPayload)
     // 后端 handleUpdateRecord 把 record_date / shift_config_id / 8 项数值
     // 都视为必填，缺任一都会 400。这里一次性全量传出，不做"差量更新"。
     return {
@@ -171,6 +237,7 @@ export function useLedgerForm() {
       record_date: state.recordDate,
       shift_config_id: state.shiftConfigId ?? 0,
       recorder_name: state.recorderName,
+      items,
       qty_opening: toInt(state.fields.qtyOpening),
       qty_closing: toInt(state.fields.qtyClosing),
       qty_gift: toInt(state.fields.qtyGift),
@@ -191,6 +258,8 @@ export function useLedgerForm() {
     resetToCreate,
     fillFromRecord,
     applyOpeningPrefill,
+    setProducts,
+    applyProductOpeningPrefill,
     markManualEdit,
     indexOfShift,
     selectShiftByIndex,

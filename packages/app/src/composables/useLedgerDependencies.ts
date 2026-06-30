@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
-import type { ShiftConfigListItem } from '@somoke/shared'
-import { storeApi } from '@/api'
+import type { Product, ProductCategory, ShiftConfigListItem } from '@somoke/shared'
+import { productApi, storeApi } from '@/api'
 import { useShiftConfigsStore } from '@/stores/shiftConfigs'
 import { useRecorderNamesStore } from '@/stores/recorderNames'
 import { useAuthStore } from '@/stores/auth'
@@ -34,6 +34,8 @@ export function useLedgerDependencies() {
 
   const currentStock = ref(0)
   const currentCash = ref(0)
+  const productCategories = ref<ProductCategory[]>([])
+  const products = ref<Product[]>([])
   const balancesLoaded = ref(false)
 
   const initialZero = computed(
@@ -77,9 +79,15 @@ export function useLedgerDependencies() {
     balancesLoaded.value = true
   }
 
+  async function reloadProducts(): Promise<void> {
+    const res = await productApi.listProductCatalog()
+    productCategories.value = Array.isArray(res.categories) ? res.categories : []
+    products.value = Array.isArray(res.products) ? res.products : []
+  }
+
   async function reloadAll(opts: LedgerDependenciesOptions = {}): Promise<void> {
     // 三个接口可以并发，storeDetail 只会真正命中一次（rpcCached 去重）
-    await Promise.all([reloadShifts(), reloadRecorders(opts.ensureRecorderName)])
+    await Promise.all([reloadShifts(), reloadRecorders(opts.ensureRecorderName), reloadProducts()])
     await reloadBalances()
   }
 
@@ -89,6 +97,8 @@ export function useLedgerDependencies() {
     selectedRecorder,
     currentStock,
     currentCash,
+    productCategories,
+    products,
     balancesLoaded,
     initialZero,
 
@@ -97,6 +107,7 @@ export function useLedgerDependencies() {
     reloadShifts,
     reloadRecorders,
     reloadBalances,
+    reloadProducts,
     reloadAll
   }
 }

@@ -1,7 +1,7 @@
 import { setActivePinia, createPinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useLedgerForm } from './useLedgerForm'
-import type { ShiftRecord } from '@somoke/shared'
+import type { Product, ShiftRecord } from '@somoke/shared'
 
 function mkRecord(over: Partial<ShiftRecord> = {}): ShiftRecord {
   return {
@@ -22,7 +22,40 @@ function mkRecord(over: Partial<ShiftRecord> = {}): ShiftRecord {
     cash_closing: 4000,
     unit_price: 3000,
     total_revenue: 15000,
+    items: [
+      {
+        product_id: 1,
+        product_name: '默认商品',
+        category_id: 1,
+        category_name: '默认分类',
+        unit_price: 3000,
+        qty_opening: 10,
+        qty_closing: 5,
+        qty_gift: 0,
+        qty_sold: 5,
+        sold_wechat: 3,
+        sold_alipay: 1,
+        sold_cash: 1,
+        total_revenue: 15000,
+        stock_deduct: 5
+      }
+    ],
     ...over
+  }
+}
+
+function mkProduct(partial: Partial<Product> & { id: number }): Product {
+  return {
+    id: partial.id,
+    store_id: 1,
+    category_id: partial.category_id ?? 1,
+    category_name: partial.category_name ?? '默认分类',
+    name: partial.name ?? `商品${partial.id}`,
+    unit_price: partial.unit_price ?? 3000,
+    current_stock: partial.current_stock ?? 10,
+    sort_order: partial.sort_order ?? 0,
+    is_active: partial.is_active ?? 1,
+    is_deleted: partial.is_deleted ?? 0
   }
 }
 
@@ -45,6 +78,7 @@ describe('useLedgerForm', () => {
     expect(f.state.shiftConfigId).toBe(2)
     expect(f.state.fields.qtyOpening).toBe('10')
     expect(f.state.fields.cashClosing).toBe('4000')
+    expect(f.state.items[0]?.productId).toBe(1)
   })
 
   it('fillFromRecord 时记录班次已失效，回退到 activeShifts 首项', () => {
@@ -79,12 +113,13 @@ describe('useLedgerForm', () => {
 
   it('summary 是派生态，随字段变化自动更新', () => {
     const f = useLedgerForm()
-    f.state.fields.qtyOpening = '10'
-    f.state.fields.qtyClosing = '3'
-    f.state.fields.qtyGift = '2'
-    f.state.fields.soldWechat = '2'
-    f.state.fields.soldAlipay = '1'
-    f.state.fields.soldCash = '2'
+    f.setProducts([mkProduct({ id: 1, unit_price: 3000 })])
+    f.state.items[0]!.qtyOpening = '10'
+    f.state.items[0]!.qtyClosing = '3'
+    f.state.items[0]!.qtyGift = '2'
+    f.state.items[0]!.soldWechat = '2'
+    f.state.items[0]!.soldAlipay = '1'
+    f.state.items[0]!.soldCash = '2'
     expect(f.summary.value.qtySold).toBe(5)
     expect(f.summary.value.paymentSoldTotal).toBe(5)
     expect(f.summary.value.totalRevenueJpy).toBe(15000)
@@ -92,17 +127,30 @@ describe('useLedgerForm', () => {
 
   it('buildAddPayload 合成合法 payload', () => {
     const f = useLedgerForm()
+    f.setProducts([mkProduct({ id: 1, current_stock: 10 })])
     f.state.recordDate = '2026-04-20'
     f.state.shiftConfigId = 7
     f.state.recorderName = '老王'
-    f.state.fields.qtyOpening = '10'
-    f.state.fields.qtyClosing = '5'
+    f.state.items[0]!.qtyOpening = '10'
+    f.state.items[0]!.qtyClosing = '5'
     f.state.fields.cashOpening = '100'
     f.state.fields.cashClosing = '200'
     const body = f.buildAddPayload()
     expect(body.shift_config_id).toBe(7)
-    expect(body.qty_opening).toBe(10)
+    expect(body.items?.[0]?.qty_opening).toBe(10)
     expect(body.cash_closing).toBe(200)
+  })
+
+  it('setProducts 只保留启用未删除商品并预填商品库存', () => {
+    const f = useLedgerForm()
+    f.setProducts([
+      mkProduct({ id: 1, current_stock: 12 }),
+      mkProduct({ id: 2, is_active: 0 }),
+      mkProduct({ id: 3, is_deleted: 1 })
+    ])
+    f.applyProductOpeningPrefill()
+    expect(f.state.items.map(i => i.productId)).toEqual([1])
+    expect(f.state.items[0]?.qtyOpening).toBe('12')
   })
 
   it('resetToCreate 清空表单并解除 prefill 锁', () => {

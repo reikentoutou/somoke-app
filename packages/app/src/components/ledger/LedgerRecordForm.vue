@@ -5,14 +5,14 @@ import { rpc } from '@/api/client'
 import { useLedgerDependencies } from '@/composables/useLedgerDependencies'
 import { useLedgerForm } from '@/composables/useLedgerForm'
 import { useSubmitLock } from '@/composables/useSubmitLock'
-import { validateRequiredQtyAndCash } from '@/utils/ledgerForm'
+import { validateProductLinesAndCash } from '@/utils/ledgerForm'
 
 import LedgerCalibrationBanner from './LedgerCalibrationBanner.vue'
 import LedgerMetaRow from './LedgerMetaRow.vue'
 import LedgerRecorderPicker from './LedgerRecorderPicker.vue'
 import LedgerOpeningClosingCard from './LedgerOpeningClosingCard.vue'
-import LedgerPaymentBreakdown from './LedgerPaymentBreakdown.vue'
 import LedgerSummaryCard from './LedgerSummaryCard.vue'
+import LedgerProductRows from './LedgerProductRows.vue'
 
 /**
  * 云函数调用固定经由此引用；勿与上方 `import { rpc }` 在压缩后共用一个短名（如 `r`），
@@ -60,6 +60,7 @@ const {
   selectedRecorder,
   currentStock,
   currentCash,
+  products,
   initialZero,
   persistRecorderChoice,
   reloadAll,
@@ -70,10 +71,11 @@ const {
   state,
   summary,
   isDateToday,
-  ITEM_UNIT_PRICE_JPY,
   resetToCreate,
   fillFromRecord,
   applyOpeningPrefill,
+  setProducts,
+  applyProductOpeningPrefill,
   markManualEdit,
   buildAddPayload,
   buildUpdatePayload
@@ -102,11 +104,6 @@ const dateOffsetHint = computed(() => isCreate.value && !isDateToday.value && !!
 /** 当前库存/现金均为 0：新建态出现 warn banner */
 const showZeroBanner = computed(() => isCreate.value && initialZero.value)
 
-const qtyPrefillHint = computed(() =>
-  isCreate.value && state.openingPrefilled
-    ? `已按当前库存预填上班数量（${currentStock.value}），如有变化可直接修改`
-    : ''
-)
 const cashPrefillHint = computed(() =>
   isCreate.value && state.openingPrefilled
     ? `已按当前现金预填上班现金（¥${currentCash.value}），如有变化可直接修改`
@@ -128,15 +125,17 @@ onMounted(async () => {
 
   if (props.mode === 'edit' && props.record) {
     const activeIds = activeShifts.value.map(s => s.id)
-    fillFromRecord(props.record, activeIds)
+    fillFromRecord(props.record, activeIds, products.value)
     if (selectedRecorder.value !== props.record.recorder_name) {
       selectedRecorder.value = props.record.recorder_name
     }
   } else {
+    setProducts(products.value)
     if (state.shiftConfigId == null && activeShifts.value.length) {
       state.shiftConfigId = activeShifts.value[0]!.id
     }
     applyOpeningPrefill(currentStock.value, currentCash.value)
+    applyProductOpeningPrefill()
     state.recorderName = selectedRecorder.value
   }
 })
@@ -173,7 +172,9 @@ async function confirmAndSubmit(): Promise<void> {
     uni.showToast({ title: '请选择记账姓名', icon: 'none' })
     return
   }
-  const required = validateRequiredQtyAndCash(state.fields)
+  const required = validateProductLinesAndCash(state.items, state.fields, {
+    enforceCurrentStock: !isEdit.value
+  })
   if (!required.ok) {
     uni.showToast({ title: required.message, icon: 'none' })
     return
@@ -239,8 +240,10 @@ async function doSubmit(): Promise<void> {
         uni.showToast({ title: msg, icon: 'success', duration: 2600 })
         // 新增后重置为新的空表单 + 重新 prefill（云端副作用会刷新缓存）
         resetToCreate()
-        await reloadBalances()
+        await reloadAll()
+        setProducts(products.value)
         applyOpeningPrefill(currentStock.value, currentCash.value)
+        applyProductOpeningPrefill()
         if (activeShifts.value.length && state.shiftConfigId == null) {
           state.shiftConfigId = activeShifts.value[0]!.id
         }
@@ -248,8 +251,7 @@ async function doSubmit(): Promise<void> {
         emit('submit-success', { mode: 'create', data: res })
       }
     } catch (submitErr) {
-      const e =
-        submitErr instanceof Error ? submitErr : new Error('提交失败，请重试')
+      const e = submitErr instanceof Error ? submitErr : new Error('提交失败，请重试')
       uni.showToast({ title: e.message, icon: 'none' })
       emit('submit-error', e)
     }
@@ -260,9 +262,17 @@ async function doSubmit(): Promise<void> {
 defineExpose({
   resetToCreate: () => {
     resetToCreate()
+    setProducts(products.value)
     applyOpeningPrefill(currentStock.value, currentCash.value)
+    applyProductOpeningPrefill()
   },
-  reloadDeps: () => reloadAll()
+  reloadDeps: async () => {
+    await reloadAll()
+    if (state.mode === 'create') {
+      setProducts(products.value, true)
+      applyProductOpeningPrefill()
+    }
+  }
 })
 </script>
 
@@ -280,15 +290,6 @@ defineExpose({
     <LedgerRecorderPicker v-model="state.recorderName" :names="recorderList" />
 
     <LedgerOpeningClosingCard
-      variant="qty"
-      :opening-prefill-hint="qtyPrefillHint"
-      :opening-value="state.fields.qtyOpening"
-      :closing-value="state.fields.qtyClosing"
-      @update:openingValue="onFieldsManualEdit('qtyOpening', $event)"
-      @update:closingValue="onFieldsManualEdit('qtyClosing', $event)"
-    />
-
-    <LedgerOpeningClosingCard
       variant="cash"
       :opening-prefill-hint="cashPrefillHint"
       :opening-value="state.fields.cashOpening"
@@ -297,14 +298,9 @@ defineExpose({
       @update:closingValue="onFieldsManualEdit('cashClosing', $event)"
     />
 
-    <LedgerPaymentBreakdown
-      v-model:soldWechat="state.fields.soldWechat"
-      v-model:soldAlipay="state.fields.soldAlipay"
-      v-model:soldCash="state.fields.soldCash"
-      v-model:qtyGift="state.fields.qtyGift"
-    />
+    <LedgerProductRows v-model:items="state.items" />
 
-    <LedgerSummaryCard :summary="summary" :unit-price="ITEM_UNIT_PRICE_JPY" />
+    <LedgerSummaryCard :summary="summary" />
 
     <view class="submit-btn" :class="{ disabled: submitting }" @tap="confirmAndSubmit">
       <text>{{ submitBtnText }}</text>
