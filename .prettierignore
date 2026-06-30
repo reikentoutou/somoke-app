@@ -3,4 +3,5 @@ packages/**/dist
 packages/**/unpackage
 miniprogram
 cloudfunctions
+database/import/counters.json
 *.tsbuildinfo

@@ -3,5 +3,7 @@
 {"_id":"shift_config","seq":0}
 {"_id":"shift_record","seq":0}
 {"_id":"invite","seq":0}
+{"_id":"product_category","seq":0}
+{"_id":"product","seq":0}
 {"_id":"store_withdrawal","seq":0}
 {"_id":"stock_ledger","seq":0}

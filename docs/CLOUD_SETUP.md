@@ -25,6 +25,8 @@
 | `store_members`      | 店员与角色                                      |
 | `store_invites`      | 邀请码                                          |
 | `shift_configs`      | 班次配置                                        |
+| `product_categories` | 商品分类                                        |
+| `products`           | 商品、价格与商品库存                            |
 | `shift_records`      | 班次销售记录                                    |
 | `store_withdrawals`  | 门店取现登记（円）                              |
 | `store_stock_ledger` | 库存流水（补货、校准、记账导致的库存变动）      |
@@ -34,27 +36,29 @@
 
 **导入 `counters` 初始文档**：须为 **JSON Lines**（每行一条 JSON，**不要** `[]` 数组）。开发者工具导入框一般只接受 **`.csv` / `.json`**，请选 **`database/import/counters.json`**（扩展名为 `.json`，内容仍是逐行 JSON）。若使用 **`.jsonl`** 也可，以你当前工具是否允许选择为准。
 
-**`counters` 文档 ID（与云函数 `nextSeq` 一致）**：`user`、`store`、`shift_config`、`shift_record`、`invite`、`store_withdrawal`、`stock_ledger` 等；缺哪条，对应业务在首次分配 id 时可能自动 `set`，但建议按导入文件预先建好，避免并发边界问题。
+**`counters` 文档 ID（与云函数 `nextSeq` 一致）**：`user`、`store`、`shift_config`、`shift_record`、`invite`、`product_category`、`product`、`store_withdrawal`、`stock_ledger` 等；缺哪条，对应业务在首次分配 id 时可能自动 `set`，但建议按导入文件预先建好，避免并发边界问题。
 
 ## 3. 云数据库权限（重要）
 
 云函数使用服务端 SDK，**不受客户端权限规则限制**；但仍建议在控制台为各集合设置 **禁止客户端读写**，避免误用 `wx.cloud.database()` 暴露数据：
 
-在 **Database → Permissions / 权限** 中，对 `users`、`stores`、`store_members`、`store_invites`、`shift_configs`、`shift_records`、`store_withdrawals`、`store_stock_ledger`、`counters` 等使用仅云函数可写或 **read/write: false**（以当前控制台界面为准）。
+在 **Database → Permissions / 权限** 中，对 `users`、`stores`、`store_members`、`store_invites`、`shift_configs`、`product_categories`、`products`、`shift_records`、`store_withdrawals`、`store_stock_ledger`、`counters` 等使用仅云函数可写或 **read/write: false**（以当前控制台界面为准）。
 
 ## 4. 集合与字段说明（参考）
 
-| 集合                 | 用途                                                                                                                                             |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `counters`           | 各实体数字 id 自增                                                                                                                               |
-| `users`              | 文档 ID = `openid`；`userId`、`nickname`、`session_token`、`current_store_id` 等                                                                 |
-| `stores`             | 数字 `id`、`name`、`current_stock`、`recorder_names` 等                                                                                          |
-| `store_members`      | 文档 ID 形如 `sm_{storeId}_{userId}`                                                                                                             |
-| `store_invites`      | 邀请码哈希与使用次数                                                                                                                             |
-| `shift_configs`      | 每店班次；`is_active` 软删                                                                                                                       |
-| `shift_records`      | 每店每条班次日记账                                                                                                                               |
-| `store_withdrawals`  | 取现流水                                                                                                                                         |
-| `store_stock_ledger` | 库存流水：`event_type`（`restock` / `adjust` / `record_add` / `record_update`）、`delta`、`balance_after`、`ref_record_id`、`note`、`created_at` |
+| 集合                 | 用途                                                                                                                  |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `counters`           | 各实体数字 id 自增                                                                                                    |
+| `users`              | 文档 ID = `openid`；`userId`、`nickname`、`session_token`、`current_store_id` 等                                      |
+| `stores`             | 数字 `id`、`name`、`current_stock`、`recorder_names` 等                                                               |
+| `store_members`      | 文档 ID 形如 `sm_{storeId}_{userId}`                                                                                  |
+| `store_invites`      | 邀请码哈希与使用次数                                                                                                  |
+| `shift_configs`      | 每店班次；`is_active` 软删                                                                                            |
+| `product_categories` | 每店商品分类；`is_active` 停用，`is_deleted` 软删                                                                     |
+| `products`           | 每店商品；含 `category_id`、`unit_price`、`current_stock`、`is_active`、`is_deleted`                                  |
+| `shift_records`      | 每店每条班次日记账；新记录含 `items` 商品行，旧记录读取时自动归入默认商品                                             |
+| `store_withdrawals`  | 取现流水                                                                                                              |
+| `store_stock_ledger` | 库存流水：`event_type`、`product_id`、`product_name`、`delta`、`balance_after`、`ref_record_id`、`note`、`created_at` |
 
 **索引**：`store_stock_ledger` 若控制台提示需索引，可建 **`store_id` + `id`（降序）** 复合索引，供流水列表查询。未建索引时，云函数 `stockLedgerList` 会降级为单次拉取最多 500 条再在内存中排序（数据量大时仍建议建索引）。
 
