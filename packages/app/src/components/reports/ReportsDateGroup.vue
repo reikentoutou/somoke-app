@@ -39,6 +39,9 @@ function onTap(id: number, date: string) {
             <text class="shift-revenue">{{ currency }} {{ shift.revenueFormatted }}</text>
           </view>
           <text class="shift-qty">售出 {{ shift.qty_sold }} 件</text>
+          <text v-if="shift.productSummaryText" class="shift-products">
+            {{ shift.productSummaryText }}
+          </text>
           <view class="shift-pay-row">
             <text class="pay-pill">微信 {{ currency }} {{ shift.wechatAmtFmt }}</text>
             <text class="pay-pill">支付宝 {{ currency }} {{ shift.alipayAmtFmt }}</text>
@@ -120,6 +123,14 @@ function onTap(id: number, date: string) {
   margin-bottom: 20rpx;
   color: #474747;
   font-size: 26rpx;
+}
+.shift-products {
+  display: block;
+  margin-top: -8rpx;
+  margin-bottom: 18rpx;
+  color: #8a8a8f;
+  font-size: 22rpx;
+  line-height: 1.4;
 }
 .shift-pay-row {
   display: flex;

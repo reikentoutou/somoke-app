@@ -228,6 +228,28 @@ async function onTapDelete(): Promise<void> {
         :cash-closing-str="view.cashClosingStr"
       />
 
+      <view v-if="view.productRows.length" class="product-card">
+        <view class="product-head">
+          <text class="product-title">商品拆分</text>
+          <text class="product-hint">按记录时价格快照计算</text>
+        </view>
+        <view v-for="row in view.productRows" :key="row.productId" class="product-row">
+          <view class="product-main">
+            <text class="product-name">{{ row.productName }}</text>
+            <text class="product-meta">
+              {{ row.categoryName || '未分类' }} · {{ row.unitPriceStr }} 円/件
+            </text>
+          </view>
+          <view class="product-stats">
+            <text class="product-revenue">{{ row.totalRevenueStr }} 円</text>
+            <text class="product-qty">
+              售出 {{ row.qtySoldFormatted }} 件 · 支付 {{ row.paymentSoldTotal }} 件 · 赠送
+              {{ row.qtyGiftFormatted }} 件
+            </text>
+          </view>
+        </view>
+      </view>
+
       <view v-if="canEdit" class="actions">
         <view class="edit-btn" hover-class="edit-btn-hover" @tap="onTapEdit">
           <text class="edit-btn-text">修改本条记录</text>
@@ -261,6 +283,65 @@ async function onTapDelete(): Promise<void> {
   padding: 40rpx 40rpx 240rpx;
   background: #f9f9fb;
   min-height: 100vh;
+}
+.product-card {
+  background: #fff;
+  border: 2rpx solid rgba(0, 0, 0, 0.04);
+  border-radius: 24rpx;
+  padding: 28rpx 32rpx;
+  margin-top: 24rpx;
+}
+.product-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 12rpx;
+}
+.product-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #1a1c1d;
+}
+.product-hint {
+  font-size: 22rpx;
+  color: #8a8a8f;
+}
+.product-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  gap: 24rpx;
+  padding: 20rpx 0;
+  border-top: 2rpx solid rgba(0, 0, 0, 0.05);
+}
+.product-main,
+.product-stats {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+.product-main {
+  flex: 1;
+}
+.product-stats {
+  align-items: flex-end;
+}
+.product-name {
+  font-size: 28rpx;
+  font-weight: 650;
+  color: #1a1c1d;
+}
+.product-meta,
+.product-qty {
+  font-size: 22rpx;
+  color: #8a8a8f;
+}
+.product-revenue {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #1a1c1d;
 }
 .actions {
   padding: 0 32rpx 48rpx;

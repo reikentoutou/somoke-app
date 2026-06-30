@@ -28,7 +28,25 @@ function mkRec(partial: Partial<ShiftRecord> & { id: number; record_date: string
     cash_opening: partial.cash_opening ?? 0,
     cash_closing: partial.cash_closing ?? 0,
     unit_price: partial.unit_price ?? 3000,
-    total_revenue: partial.total_revenue ?? 0
+    total_revenue: partial.total_revenue ?? 0,
+    items: partial.items ?? [
+      {
+        product_id: 1,
+        product_name: '默认商品',
+        category_id: 1,
+        category_name: '默认分类',
+        unit_price: partial.unit_price ?? 3000,
+        qty_opening: partial.qty_opening ?? 0,
+        qty_closing: partial.qty_closing ?? 0,
+        qty_gift: partial.qty_gift ?? 0,
+        qty_sold: partial.qty_sold ?? 0,
+        sold_wechat: partial.sold_wechat ?? 0,
+        sold_alipay: partial.sold_alipay ?? 0,
+        sold_cash: partial.sold_cash ?? 0,
+        total_revenue: partial.total_revenue ?? 0,
+        stock_deduct: partial.qty_sold ?? 0
+      }
+    ]
   }
 }
 
@@ -71,6 +89,54 @@ describe('reports utils', () => {
     expect(groups[0]?.items[0]?.revenueFormatted).toBe('6,000.00')
     expect(groups[0]?.items[0]?.alipayAmtFmt).toBe('6,000.00')
     expect(groups[1]?.date).toBe('2026-04-18')
+  })
+
+  it('groupRecordsByDate uses item price snapshots for channel amounts', () => {
+    const groups = groupRecordsByDate([
+      mkRec({
+        id: 1,
+        record_date: '2026-04-20',
+        total_revenue: 8000,
+        items: [
+          {
+            product_id: 1,
+            product_name: 'A',
+            category_id: 1,
+            category_name: '默认分类',
+            unit_price: 3000,
+            qty_opening: 0,
+            qty_closing: 0,
+            qty_gift: 0,
+            qty_sold: 1,
+            sold_wechat: 1,
+            sold_alipay: 0,
+            sold_cash: 0,
+            total_revenue: 3000,
+            stock_deduct: 1
+          },
+          {
+            product_id: 2,
+            product_name: 'B',
+            category_id: 1,
+            category_name: '默认分类',
+            unit_price: 5000,
+            qty_opening: 0,
+            qty_closing: 0,
+            qty_gift: 0,
+            qty_sold: 1,
+            sold_wechat: 0,
+            sold_alipay: 1,
+            sold_cash: 0,
+            total_revenue: 5000,
+            stock_deduct: 1
+          }
+        ]
+      })
+    ])
+    const item = groups[0]?.items[0]
+    expect(item?.wechatAmtFmt).toBe('3,000.00')
+    expect(item?.alipayAmtFmt).toBe('5,000.00')
+    expect(item?.productSummaryText).toBe('A 1件 · B 1件')
   })
 
   it('filterGroupsByDate filters by ISO, ignores non-ISO', () => {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import type { ShiftRecord } from '@somoke/shared'
+import type { ProductSummary, ShiftRecord } from '@somoke/shared'
 import { getRecords } from '@/api/endpoints/record'
 import { useSession } from '@/composables/useSession'
 import { useLoadSeq } from '@/composables/useLoadSeq'
@@ -46,7 +46,8 @@ const summary = ref({
   total_cash_amount: 0,
   total_wechat_qty: 0,
   total_alipay_qty: 0,
-  total_cash_qty: 0
+  total_cash_qty: 0,
+  product_summaries: [] as ProductSummary[]
 })
 const loading = ref(false)
 const chartMode = ref<ChartMode>('daily')
@@ -59,6 +60,9 @@ const revenueFormatted = computed(() => formatCash(summary.value.total_revenue))
 const wechatAmountFmt = computed(() => formatCash(summary.value.total_wechat_amount))
 const alipayAmountFmt = computed(() => formatCash(summary.value.total_alipay_amount))
 const cashAmountFmt = computed(() => formatCash(summary.value.total_cash_amount))
+const productSummaries = computed(() =>
+  (summary.value.product_summaries ?? []).filter(p => p.total_sold > 0 || p.total_revenue > 0)
+)
 
 const monthBounds = computed(() => monthDayBounds(currentMonth.value))
 
@@ -92,7 +96,8 @@ async function loadMonthData(): Promise<void> {
       total_cash_amount: Number(s?.total_cash_amount) || 0,
       total_wechat_qty: Number(s?.total_wechat_qty) || 0,
       total_alipay_qty: Number(s?.total_alipay_qty) || 0,
-      total_cash_qty: Number(s?.total_cash_qty) || 0
+      total_cash_qty: Number(s?.total_cash_qty) || 0,
+      product_summaries: Array.isArray(s?.product_summaries) ? s.product_summaries : []
     }
     records.value = Array.isArray(data.records) ? data.records : []
 
@@ -144,6 +149,23 @@ onShow(() => {
       :cash-qty="summary.total_cash_qty"
     />
 
+    <view v-if="productSummaries.length" class="product-summary-card">
+      <view class="product-summary-head">
+        <text class="product-summary-title">商品拆分</text>
+        <text class="product-summary-sub">本月按商品汇总</text>
+      </view>
+      <view v-for="row in productSummaries" :key="row.product_id" class="product-summary-row">
+        <view class="product-summary-main">
+          <text class="product-summary-name">{{ row.product_name }}</text>
+          <text class="product-summary-meta">
+            {{ row.category_name || '未分类' }} · 售出 {{ row.total_sold }} 件 · 赠送
+            {{ row.total_gift }} 件
+          </text>
+        </view>
+        <text class="product-summary-amount">¥ {{ formatCash(row.total_revenue) }}</text>
+      </view>
+    </view>
+
     <view class="section-head">
       <text class="section-title">营收趋势</text>
     </view>
@@ -183,6 +205,59 @@ onShow(() => {
 }
 .section-head {
   margin-bottom: 24rpx;
+}
+.product-summary-card {
+  background: #fff;
+  border-radius: 32rpx;
+  border: 2rpx solid rgba(0, 0, 0, 0.04);
+  padding: 28rpx 32rpx;
+  margin-bottom: 40rpx;
+}
+.product-summary-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 12rpx;
+}
+.product-summary-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #1a1c1d;
+}
+.product-summary-sub {
+  font-size: 22rpx;
+  color: #8a8a8f;
+}
+.product-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+  padding: 20rpx 0;
+  border-top: 2rpx solid rgba(0, 0, 0, 0.05);
+}
+.product-summary-main {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8rpx;
+}
+.product-summary-name {
+  font-size: 28rpx;
+  font-weight: 650;
+  color: #1a1c1d;
+}
+.product-summary-meta {
+  font-size: 22rpx;
+  color: #8a8a8f;
+}
+.product-summary-amount {
+  flex-shrink: 0;
+  color: #1a1c1d;
+  font-size: 28rpx;
+  font-weight: 700;
 }
 .section-head-spaced {
   margin-top: 16rpx;

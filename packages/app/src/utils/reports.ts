@@ -1,4 +1,4 @@
-import type { ShiftRecord } from '@somoke/shared'
+import type { RecordItem, ShiftRecord } from '@somoke/shared'
 import { formatCash } from './money'
 import { formatMonth, getWeekday, lastDayOfMonth, monthDayBounds } from './date'
 
@@ -31,6 +31,7 @@ export interface DailyShiftItem extends ShiftRecord {
   wechatAmtFmt: string
   alipayAmtFmt: string
   cashAmtFmt: string
+  productSummaryText: string
 }
 
 export interface DailyGroup {
@@ -40,18 +41,62 @@ export interface DailyGroup {
   items: DailyShiftItem[]
 }
 
-/** 估算某天的渠道金额（qty × unit_price）——旧实现在明细卡里展示 */
-function decorateShiftItem(r: ShiftRecord): DailyShiftItem {
+function fallbackRecordItem(r: ShiftRecord): RecordItem {
   const up = Number(r.unit_price) || 0
   const sw = Number(r.sold_wechat) || 0
   const sa = Number(r.sold_alipay) || 0
   const sc = Number(r.sold_cash) || 0
   return {
+    product_id: 0,
+    product_name: '默认商品',
+    category_id: 0,
+    category_name: '默认分类',
+    unit_price: up,
+    qty_opening: Number(r.qty_opening) || 0,
+    qty_closing: Number(r.qty_closing) || 0,
+    qty_gift: Number(r.qty_gift) || 0,
+    qty_sold: Number(r.qty_sold) || 0,
+    sold_wechat: sw,
+    sold_alipay: sa,
+    sold_cash: sc,
+    total_revenue: Number(r.total_revenue) || (sw + sa + sc) * up,
+    stock_deduct: Number(r.qty_sold) || 0
+  }
+}
+
+function recordItems(r: ShiftRecord): RecordItem[] {
+  return Array.isArray(r.items) && r.items.length ? r.items : [fallbackRecordItem(r)]
+}
+
+function productSummaryText(items: RecordItem[]): string {
+  return items
+    .filter(it => (Number(it.qty_sold) || 0) > 0 || (Number(it.total_revenue) || 0) > 0)
+    .map(it => `${it.product_name || '商品'} ${Number(it.qty_sold) || 0}件`)
+    .join(' · ')
+}
+
+/** 渠道金额按商品价格快照求和；旧记录无 items 时回退到默认商品。 */
+function decorateShiftItem(r: ShiftRecord): DailyShiftItem {
+  const items = recordItems(r)
+  const wechatAmount = items.reduce(
+    (sum, it) => sum + (Number(it.sold_wechat) || 0) * (Number(it.unit_price) || 0),
+    0
+  )
+  const alipayAmount = items.reduce(
+    (sum, it) => sum + (Number(it.sold_alipay) || 0) * (Number(it.unit_price) || 0),
+    0
+  )
+  const cashAmount = items.reduce(
+    (sum, it) => sum + (Number(it.sold_cash) || 0) * (Number(it.unit_price) || 0),
+    0
+  )
+  return {
     ...r,
     revenueFormatted: formatCash(Number(r.total_revenue) || 0),
-    wechatAmtFmt: formatCash(sw * up),
-    alipayAmtFmt: formatCash(sa * up),
-    cashAmtFmt: formatCash(sc * up)
+    wechatAmtFmt: formatCash(wechatAmount),
+    alipayAmtFmt: formatCash(alipayAmount),
+    cashAmtFmt: formatCash(cashAmount),
+    productSummaryText: productSummaryText(items)
   }
 }
 
