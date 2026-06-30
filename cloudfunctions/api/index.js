@@ -4,6 +4,14 @@
  */
 const cloud = require('wx-server-sdk');
 const crypto = require('crypto');
+const {
+  parseStockValue,
+  nextStoreBalance,
+  selectRecordItemSnapshot,
+  findInsufficientStockDeduct,
+  findInsufficientStockDelta,
+  findNonZeroStockProduct,
+} = require('./ledgerRules');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -13,6 +21,14 @@ const TOKEN_EXPIRE_SECONDS = 7 * 24 * 3600;
 
 /** 单品标价（円）：各支付方式按件数计，营业额 = 此单价 ×（微信+支付宝+现金）件数；赠送不计入件数 */
 const ITEM_UNIT_PRICE_JPY = 3000;
+const DEFAULT_CATEGORY_NAME = '默认分类';
+const DEFAULT_PRODUCT_NAME = '默认商品';
+const DEFAULT_CATALOG_ID_BASE = 1000000000;
+
+function defaultCatalogIdForStore(storeId) {
+  var sid = parseInt(storeId, 10) || 0;
+  return DEFAULT_CATALOG_ID_BASE + sid;
+}
 
 function stockDeductFromQtys(qtyOpening, qtyClosing, qtyGift, soldWechat, soldAlipay, soldCash) {
   var qtySold = (parseInt(qtyOpening, 10) || 0) - (parseInt(qtyClosing, 10) || 0) - (parseInt(qtyGift, 10) || 0);
@@ -31,6 +47,22 @@ function ok(data, msg) {
 }
 function fail(code, msg) {
   return { code: code || 400, msg: msg || 'error', data: null };
+}
+
+function userError(code, msg) {
+  var err = new Error(msg || '业务规则校验失败');
+  err._user = { code: code || 400, msg: msg || '业务规则校验失败' };
+  return err;
+}
+
+function stockInsufficientMessage(issue) {
+  var name = issue && issue.productName ? String(issue.productName) : '';
+  return name ? '「' + name + '」库存不足，请先补货或校准库存' : '商品库存不足，请先补货或校准库存';
+}
+
+function nonZeroStockDeleteMessage(product) {
+  var name = product && product.name ? String(product.name) : '';
+  return name ? '「' + name + '」仍有库存，请先校准为 0 后再删除' : '商品仍有库存，请先校准为 0 后再删除';
 }
 
 /** 文档不存在时 doc().get() 可能抛错而非返回空 data，需统一按「无文档」处理 */
@@ -119,7 +151,7 @@ function cloudDateToMs(v) {
 }
 
 /** 组装流水文档数据（不落库，供事务内外共用） */
-function buildStockLedgerDocData(ledgerId, storeId, userId, eventType, delta, balanceAfter, cashDelta, cashBalanceAfter, refRecordId, note) {
+function buildStockLedgerDocData(ledgerId, storeId, userId, eventType, delta, balanceAfter, cashDelta, cashBalanceAfter, refRecordId, note, productId, productName) {
   var data = {
     id: ledgerId,
     store_id: storeId,
@@ -132,6 +164,11 @@ function buildStockLedgerDocData(ledgerId, storeId, userId, eventType, delta, ba
     created_by: userId,
     created_at: db.serverDate(),
   };
+  var pid = productId != null ? parseInt(productId, 10) : NaN;
+  if (!Number.isNaN(pid) && pid > 0) {
+    data.product_id = pid;
+    data.product_name = productName != null ? String(productName).trim().slice(0, 64) : '';
+  }
   var rid = refRecordId != null ? parseInt(refRecordId, 10) : NaN;
   if (!Number.isNaN(rid) && rid > 0) {
     data.ref_record_id = rid;
@@ -143,9 +180,9 @@ function buildStockLedgerDocData(ledgerId, storeId, userId, eventType, delta, ba
  * 事务中写流水：_id 用确定性字符串（ssl_<id>），保证重试/回放幂等不会产生重复文档。
  * 需要在外部用 nextSeq('stock_ledger') 预先拿到 ledgerId。
  */
-async function insertStockLedgerEntryTx(tx, ledgerId, storeId, userId, eventType, delta, balanceAfter, cashDelta, cashBalanceAfter, refRecordId, note) {
+async function insertStockLedgerEntryTx(tx, ledgerId, storeId, userId, eventType, delta, balanceAfter, cashDelta, cashBalanceAfter, refRecordId, note, productId, productName) {
   var docId = 'ssl_' + ledgerId;
-  var data = buildStockLedgerDocData(ledgerId, storeId, userId, eventType, delta, balanceAfter, cashDelta, cashBalanceAfter, refRecordId, note);
+  var data = buildStockLedgerDocData(ledgerId, storeId, userId, eventType, delta, balanceAfter, cashDelta, cashBalanceAfter, refRecordId, note, productId, productName);
   await tx.collection('store_stock_ledger').doc(docId).set({ data: data });
 }
 
@@ -293,6 +330,352 @@ async function requireActiveStoreId(openid, userDoc) {
   return { err: fail(403, '请选择当前门店') };
 }
 
+function toPublicCategory(row) {
+  return {
+    id: row.id,
+    store_id: row.store_id,
+    name: row.name || '',
+    sort_order: row.sort_order || 0,
+    is_active: row.is_active === 0 ? 0 : 1,
+    is_deleted: row.is_deleted === 1 ? 1 : 0,
+    created_at: formatLedgerEntryTime(row.created_at),
+    updated_at: formatLedgerEntryTime(row.updated_at),
+  };
+}
+
+function toPublicProduct(row, categoryName) {
+  return {
+    id: row.id,
+    store_id: row.store_id,
+    category_id: row.category_id,
+    category_name: categoryName || row.category_name || '',
+    name: row.name || '',
+    unit_price: parseFloat(row.unit_price) || 0,
+    current_stock: parseInt(row.current_stock, 10) || 0,
+    sort_order: row.sort_order || 0,
+    is_active: row.is_active === 0 ? 0 : 1,
+    is_deleted: row.is_deleted === 1 ? 1 : 0,
+    created_at: formatLedgerEntryTime(row.created_at),
+    updated_at: formatLedgerEntryTime(row.updated_at),
+  };
+}
+
+async function getStoreById(storeId) {
+  var stQ = await db.collection('stores').where({ id: storeId }).limit(1).get();
+  return stQ.data.length ? stQ.data[0] : null;
+}
+
+async function fetchAllByWhere(collectionName, whereClause, pageSize) {
+  var all = [];
+  var limit = pageSize || 100;
+  var offset = 0;
+  while (true) {
+    var snap = await db
+      .collection(collectionName)
+      .where(whereClause)
+      .skip(offset)
+      .limit(limit)
+      .get();
+    var rows = snap.data || [];
+    all = all.concat(rows);
+    if (rows.length < limit) break;
+    offset += limit;
+  }
+  return all;
+}
+
+async function ensureDefaultProductCatalog(storeDoc) {
+  var storeId = parseInt(storeDoc.id, 10) || 0;
+  if (storeId <= 0) return;
+  var products = await db.collection('products').where({ store_id: storeId }).limit(1).get();
+  if (products.data.length) return;
+
+  var defaultId = defaultCatalogIdForStore(storeId);
+  var categoryId = defaultId;
+  var productId = defaultId;
+  var categoryDocId = 'pc_default_' + storeId;
+  var productDocId = 'prod_default_' + storeId;
+  var unitPrice =
+    storeDoc.unit_price != null && !Number.isNaN(parseFloat(storeDoc.unit_price))
+      ? parseFloat(storeDoc.unit_price)
+      : ITEM_UNIT_PRICE_JPY;
+  var stock = parseInt(storeDoc.current_stock, 10) || 0;
+
+  await db.collection('product_categories').doc(categoryDocId).set({
+    data: {
+      id: categoryId,
+      store_id: storeId,
+      name: DEFAULT_CATEGORY_NAME,
+      sort_order: 1,
+      is_active: 1,
+      is_deleted: 0,
+      created_at: db.serverDate(),
+      updated_at: db.serverDate(),
+    },
+  });
+  await db.collection('products').doc(productDocId).set({
+    data: {
+      id: productId,
+      store_id: storeId,
+      category_id: categoryId,
+      name: DEFAULT_PRODUCT_NAME,
+      unit_price: unitPrice,
+      current_stock: stock,
+      sort_order: 1,
+      is_active: 1,
+      is_deleted: 0,
+      created_at: db.serverDate(),
+      updated_at: db.serverDate(),
+    },
+  });
+}
+
+async function fetchProductCatalog(storeId) {
+  var storeDoc = await getStoreById(storeId);
+  if (!storeDoc) return { categories: [], products: [], categoryMap: {}, productMap: {} };
+  await ensureDefaultProductCatalog(storeDoc);
+
+  var categoryRows = await fetchAllByWhere('product_categories', { store_id: storeId });
+  var productRows = await fetchAllByWhere('products', { store_id: storeId });
+  var categoryMap = {};
+  var categories = [];
+  for (var c = 0; c < categoryRows.length; c++) {
+    var cat = categoryRows[c];
+    categoryMap[cat.id] = cat;
+    if (cat.is_deleted === 1) continue;
+    categories.push(toPublicCategory(cat));
+  }
+  categories.sort(function (a, b) {
+    return (a.sort_order || 0) - (b.sort_order || 0) || a.id - b.id;
+  });
+
+  var productMap = {};
+  var products = [];
+  for (var p = 0; p < productRows.length; p++) {
+    var prod = productRows[p];
+    productMap[prod.id] = prod;
+    if (prod.is_deleted === 1) continue;
+    var cname = categoryMap[prod.category_id] ? categoryMap[prod.category_id].name : prod.category_name || '';
+    products.push(toPublicProduct(prod, cname));
+  }
+  products.sort(function (a, b) {
+    return (
+      (a.category_id - b.category_id) ||
+      ((a.sort_order || 0) - (b.sort_order || 0)) ||
+      (a.id - b.id)
+    );
+  });
+  return { categories: categories, products: products, categoryMap: categoryMap, productMap: productMap };
+}
+
+async function getDefaultProduct(storeId) {
+  var catalog = await fetchProductCatalog(storeId);
+  var active = catalog.products.filter(function (p) { return p.is_active !== 0 && p.is_deleted !== 1; });
+  return active[0] || catalog.products[0] || null;
+}
+
+function legacyItemFromRow(row, fallbackProduct) {
+  var unitPrice =
+    row.unit_price != null && !Number.isNaN(parseFloat(row.unit_price))
+      ? parseFloat(row.unit_price)
+      : (fallbackProduct ? fallbackProduct.unit_price : ITEM_UNIT_PRICE_JPY);
+  var qtyOpening = parseInt(row.qty_opening, 10) || 0;
+  var qtyClosing = parseInt(row.qty_closing, 10) || 0;
+  var qtyGift = parseInt(row.qty_gift, 10) || 0;
+  var soldWechat = parseInt(row.sold_wechat, 10) || 0;
+  var soldAlipay = parseInt(row.sold_alipay, 10) || 0;
+  var soldCash = parseInt(row.sold_cash, 10) || 0;
+  var qtySold = qtyOpening - qtyClosing - qtyGift;
+  if (qtySold < 0) qtySold = 0;
+  var paymentQty = soldWechat + soldAlipay + soldCash;
+  var totalRevenue = Math.round(unitPrice * paymentQty * 100) / 100;
+  return {
+    product_id: fallbackProduct ? fallbackProduct.id : 0,
+    product_name: fallbackProduct ? fallbackProduct.name : DEFAULT_PRODUCT_NAME,
+    category_id: fallbackProduct ? fallbackProduct.category_id : 0,
+    category_name: fallbackProduct ? fallbackProduct.category_name : DEFAULT_CATEGORY_NAME,
+    unit_price: unitPrice,
+    qty_opening: qtyOpening,
+    qty_closing: qtyClosing,
+    qty_gift: qtyGift,
+    qty_sold: qtySold,
+    sold_wechat: soldWechat,
+    sold_alipay: soldAlipay,
+    sold_cash: soldCash,
+    total_revenue: totalRevenue,
+    stock_deduct: stockDeductFromQtys(qtyOpening, qtyClosing, qtyGift, soldWechat, soldAlipay, soldCash),
+  };
+}
+
+async function normalizeRecordItemsFromRow(row, storeId, fallbackProduct) {
+  if (Array.isArray(row.items) && row.items.length) {
+    return row.items.map(function (it) {
+      var unitPrice = parseFloat(it.unit_price) || ITEM_UNIT_PRICE_JPY;
+      var qtyOpening = parseInt(it.qty_opening, 10) || 0;
+      var qtyClosing = parseInt(it.qty_closing, 10) || 0;
+      var qtyGift = parseInt(it.qty_gift, 10) || 0;
+      var soldWechat = parseInt(it.sold_wechat, 10) || 0;
+      var soldAlipay = parseInt(it.sold_alipay, 10) || 0;
+      var soldCash = parseInt(it.sold_cash, 10) || 0;
+      var qtySold = parseInt(it.qty_sold, 10);
+      if (Number.isNaN(qtySold)) {
+        qtySold = qtyOpening - qtyClosing - qtyGift;
+        if (qtySold < 0) qtySold = 0;
+      }
+      var paymentQty = soldWechat + soldAlipay + soldCash;
+      return {
+        product_id: parseInt(it.product_id, 10) || 0,
+        product_name: it.product_name || '',
+        category_id: parseInt(it.category_id, 10) || 0,
+        category_name: it.category_name || '',
+        unit_price: unitPrice,
+        qty_opening: qtyOpening,
+        qty_closing: qtyClosing,
+        qty_gift: qtyGift,
+        qty_sold: qtySold,
+        sold_wechat: soldWechat,
+        sold_alipay: soldAlipay,
+        sold_cash: soldCash,
+        total_revenue: parseFloat(it.total_revenue) || Math.round(unitPrice * paymentQty * 100) / 100,
+        stock_deduct: parseInt(it.stock_deduct, 10) || stockDeductFromQtys(qtyOpening, qtyClosing, qtyGift, soldWechat, soldAlipay, soldCash),
+      };
+    });
+  }
+  var fallback = arguments.length >= 3 ? fallbackProduct : await getDefaultProduct(storeId);
+  return [legacyItemFromRow(row, fallback)];
+}
+
+function summarizeRecordItems(items) {
+  var out = {
+    qty_opening: 0,
+    qty_closing: 0,
+    qty_gift: 0,
+    qty_sold: 0,
+    sold_wechat: 0,
+    sold_alipay: 0,
+    sold_cash: 0,
+    total_revenue: 0,
+    stock_deduct: 0,
+    unit_price: items.length === 1 ? items[0].unit_price : 0,
+  };
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    out.qty_opening += it.qty_opening;
+    out.qty_closing += it.qty_closing;
+    out.qty_gift += it.qty_gift;
+    out.qty_sold += it.qty_sold;
+    out.sold_wechat += it.sold_wechat;
+    out.sold_alipay += it.sold_alipay;
+    out.sold_cash += it.sold_cash;
+    out.total_revenue += it.total_revenue;
+    out.stock_deduct += it.stock_deduct;
+  }
+  out.total_revenue = Math.round(out.total_revenue * 100) / 100;
+  return out;
+}
+
+async function buildRecordItemsFromPayload(payload, storeId, oldItems, isCreate) {
+  var catalog = await fetchProductCatalog(storeId);
+  var itemInputs = Array.isArray(payload.items) ? payload.items : [];
+  if (!itemInputs.length) {
+    var fallback = await getDefaultProduct(storeId);
+    if (!fallback) {
+      return { err: fail(400, '请先配置商品') };
+    }
+    itemInputs = [{
+      product_id: fallback.id,
+      qty_opening: payload.qty_opening,
+      qty_closing: payload.qty_closing,
+      qty_gift: payload.qty_gift,
+      sold_wechat: payload.sold_wechat,
+      sold_alipay: payload.sold_alipay,
+      sold_cash: payload.sold_cash,
+    }];
+  }
+
+  var oldByProduct = {};
+  for (var oi = 0; oi < (oldItems || []).length; oi++) {
+    oldByProduct[oldItems[oi].product_id] = oldItems[oi];
+  }
+
+  var items = [];
+  var seen = {};
+  for (var i = 0; i < itemInputs.length; i++) {
+    var raw = itemInputs[i] || {};
+    var productId = parseInt(raw.product_id, 10);
+    if (!productId || productId <= 0) return { err: fail(400, '请选择有效商品') };
+    if (seen[productId]) return { err: fail(400, '同一商品不能重复录入') };
+    seen[productId] = true;
+    var product = catalog.productMap[productId];
+    var old = oldByProduct[productId];
+    if (!product && !old) return { err: fail(400, '商品不存在或已删除') };
+    if (isCreate && (!product || product.is_active === 0 || product.is_deleted === 1)) {
+      return { err: fail(400, '商品已停用或删除，不能用于新记录') };
+    }
+    if (!isCreate && !old && (!product || product.is_active === 0 || product.is_deleted === 1)) {
+      return { err: fail(400, '商品已停用或删除，不能新增到历史记录') };
+    }
+
+    var qtyOpening = parseNonNegInt(raw.qty_opening, MAX_QTY);
+    var qtyClosing = parseNonNegInt(raw.qty_closing, MAX_QTY);
+    var qtyGift = parseNonNegInt(raw.qty_gift, MAX_QTY);
+    var soldWechat = parseNonNegInt(raw.sold_wechat, MAX_QTY);
+    var soldAlipay = parseNonNegInt(raw.sold_alipay, MAX_QTY);
+    var soldCash = parseNonNegInt(raw.sold_cash, MAX_QTY);
+    if ([qtyOpening, qtyClosing, qtyGift, soldWechat, soldAlipay, soldCash].indexOf(null) !== -1) {
+      return { err: fail(400, '商品件数须为非负整数且不能超过上限') };
+    }
+
+    var category = product ? catalog.categoryMap[product.category_id] : null;
+    var snapshot = selectRecordItemSnapshot(product || null, category || null, old || null);
+    var unitPrice = snapshot.unit_price;
+    var qtySold = qtyOpening - qtyClosing - qtyGift;
+    if (qtySold < 0) qtySold = 0;
+    var paymentQty = soldWechat + soldAlipay + soldCash;
+    var totalRevenue = Math.round(unitPrice * paymentQty * 100) / 100;
+    items.push({
+      product_id: productId,
+      product_name: snapshot.product_name,
+      category_id: snapshot.category_id,
+      category_name: snapshot.category_name,
+      unit_price: unitPrice,
+      qty_opening: qtyOpening,
+      qty_closing: qtyClosing,
+      qty_gift: qtyGift,
+      qty_sold: qtySold,
+      sold_wechat: soldWechat,
+      sold_alipay: soldAlipay,
+      sold_cash: soldCash,
+      total_revenue: totalRevenue,
+      stock_deduct: stockDeductFromQtys(qtyOpening, qtyClosing, qtyGift, soldWechat, soldAlipay, soldCash),
+    });
+  }
+  if (!items.length) return { err: fail(400, '请至少录入一个商品') };
+  return { items: items, summary: summarizeRecordItems(items), catalog: catalog };
+}
+
+function stockMapFromItems(items) {
+  var m = {};
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var pid = parseInt(it.product_id, 10) || 0;
+    if (!pid) continue;
+    m[pid] = (m[pid] || 0) + (parseInt(it.stock_deduct, 10) || 0);
+  }
+  return m;
+}
+
+function productDocIds(catalog) {
+  var out = {};
+  var keys = Object.keys(catalog.productMap || {});
+  for (var i = 0; i < keys.length; i++) {
+    var p = catalog.productMap[keys[i]];
+    if (p.is_deleted === 1) continue;
+    out[p.id] = p._id;
+  }
+  return out;
+}
+
 async function buildLoginPayload(openid, userDoc, nickname, avatarUrl) {
   var stores = await fetchUserStores(userDoc.userId);
   var storeCount = stores.length;
@@ -393,6 +776,246 @@ async function handleGetStores(openid) {
   var cur = curRaw != null && curRaw !== '' ? parseInt(curRaw, 10) : 0;
   if (Number.isNaN(cur) || cur < 0) cur = 0;
   return ok({ stores: stores, current_store_id: cur }, 'success');
+}
+
+async function handleProductCatalogList(openid) {
+  var u = await requireUser(openid);
+  if (!u) return fail(401, '未登录或用户无效');
+  var ctx = await requireActiveStoreId(openid, u);
+  if (ctx.err) return ctx.err;
+  var catalog = await fetchProductCatalog(ctx.storeId);
+  return ok({ categories: catalog.categories, products: catalog.products }, 'success');
+}
+
+async function handleProductCategorySave(openid, payload) {
+  var u = await requireUser(openid);
+  if (!u) return fail(401, '未登录或用户无效');
+  var ctx = await requireActiveStoreId(openid, u);
+  if (ctx.err) return ctx.err;
+  var storeId = ctx.storeId;
+  var role = await requireStoreMembership(u.userId, storeId);
+  if (role !== 1) return fail(403, '仅门店管理员可操作商品分类');
+
+  var id = payload.id != null ? parseInt(payload.id, 10) : 0;
+  var name = payload.name != null ? String(payload.name).trim() : '';
+  var sortOrder = payload.sort_order != null ? parseInt(payload.sort_order, 10) : 0;
+  if (!name || name.length > 64) return fail(400, '请填写 1～64 字分类名称');
+  if (Number.isNaN(sortOrder)) sortOrder = 0;
+
+  if (id > 0) {
+    var q = await db.collection('product_categories').where({ store_id: storeId, id: id }).limit(1).get();
+    if (!q.data.length || q.data[0].is_deleted === 1) return fail(404, '分类不存在');
+    await db.collection('product_categories').doc(q.data[0]._id).update({
+      data: { name: name, sort_order: sortOrder, is_active: 1, updated_at: db.serverDate() },
+    });
+    var after = await db.collection('product_categories').doc(q.data[0]._id).get();
+    return ok({ category: toPublicCategory(after.data) }, '已保存');
+  }
+
+  var categoryId = await nextSeq('product_category');
+  var docId = 'pc_' + categoryId;
+  await db.collection('product_categories').doc(docId).set({
+    data: {
+      id: categoryId,
+      store_id: storeId,
+      name: name,
+      sort_order: sortOrder,
+      is_active: 1,
+      is_deleted: 0,
+      created_at: db.serverDate(),
+      updated_at: db.serverDate(),
+    },
+  });
+  var created = await db.collection('product_categories').doc(docId).get();
+  return ok({ category: toPublicCategory(created.data) }, '已添加');
+}
+
+async function handleProductCategoryDisable(openid, payload) {
+  var u = await requireUser(openid);
+  if (!u) return fail(401, '未登录或用户无效');
+  var ctx = await requireActiveStoreId(openid, u);
+  if (ctx.err) return ctx.err;
+  var role = await requireStoreMembership(u.userId, ctx.storeId);
+  if (role !== 1) return fail(403, '仅门店管理员可操作商品分类');
+  var id = parseInt(payload.id, 10);
+  if (!id || id <= 0) return fail(400, '缺少分类 id');
+  var q = await db.collection('product_categories').where({ store_id: ctx.storeId, id: id }).limit(1).get();
+  if (!q.data.length) return fail(404, '分类不存在');
+  await db.collection('product_categories').doc(q.data[0]._id).update({
+    data: { is_active: 0, updated_at: db.serverDate() },
+  });
+  var products = await fetchAllByWhere('products', { store_id: ctx.storeId, category_id: id });
+  for (var i = 0; i < products.length; i++) {
+    if (products[i].is_deleted === 1) continue;
+    await db.collection('products').doc(products[i]._id).update({
+      data: { is_active: 0, updated_at: db.serverDate() },
+    });
+  }
+  return ok({ id: id }, '已停用');
+}
+
+async function productIsReferenced(productId, storeId) {
+  var defaultProduct = await getDefaultProduct(storeId);
+  var isDefaultProduct = defaultProduct && defaultProduct.id === productId;
+  var records = await fetchAllByWhere('shift_records', { store_id: storeId });
+  for (var i = 0; i < records.length; i++) {
+    var items = Array.isArray(records[i].items) ? records[i].items : [];
+    if (isDefaultProduct && !items.length) return true;
+    for (var j = 0; j < items.length; j++) {
+      if (parseInt(items[j].product_id, 10) === productId) return true;
+    }
+  }
+  var ledQ = await db.collection('store_stock_ledger').where({ store_id: storeId, product_id: productId }).limit(1).get();
+  return ledQ.data.length > 0;
+}
+
+async function handleProductCategoryDelete(openid, payload) {
+  var u = await requireUser(openid);
+  if (!u) return fail(401, '未登录或用户无效');
+  var ctx = await requireActiveStoreId(openid, u);
+  if (ctx.err) return ctx.err;
+  var storeId = ctx.storeId;
+  var role = await requireStoreMembership(u.userId, storeId);
+  if (role !== 1) return fail(403, '仅门店管理员可操作商品分类');
+  var id = parseInt(payload.id, 10);
+  if (!id || id <= 0) return fail(400, '缺少分类 id');
+  var q = await db.collection('product_categories').where({ store_id: storeId, id: id }).limit(1).get();
+  if (!q.data.length) return fail(404, '分类不存在');
+  var products = await fetchAllByWhere('products', { store_id: storeId, category_id: id });
+  var nonZeroProduct = findNonZeroStockProduct(products);
+  if (nonZeroProduct) return fail(400, nonZeroStockDeleteMessage(nonZeroProduct));
+  var soft = false;
+  for (var i = 0; i < products.length; i++) {
+    var p = products[i];
+    if (p.is_deleted === 1) continue;
+    if (await productIsReferenced(p.id, storeId)) soft = true;
+  }
+  if (soft) {
+    await db.collection('product_categories').doc(q.data[0]._id).update({
+      data: { is_active: 0, is_deleted: 1, updated_at: db.serverDate() },
+    });
+    for (var sp = 0; sp < products.length; sp++) {
+      await db.collection('products').doc(products[sp]._id).update({
+        data: { is_active: 0, is_deleted: 1, updated_at: db.serverDate() },
+      });
+    }
+  } else {
+    await db.collection('product_categories').doc(q.data[0]._id).remove();
+    for (var hp = 0; hp < products.length; hp++) {
+      await db.collection('products').doc(products[hp]._id).remove();
+    }
+  }
+  return ok({ id: id, soft_deleted: soft }, soft ? '已软删除' : '已删除');
+}
+
+async function handleProductSave(openid, payload) {
+  var u = await requireUser(openid);
+  if (!u) return fail(401, '未登录或用户无效');
+  var ctx = await requireActiveStoreId(openid, u);
+  if (ctx.err) return ctx.err;
+  var storeId = ctx.storeId;
+  var role = await requireStoreMembership(u.userId, storeId);
+  if (role !== 1) return fail(403, '仅门店管理员可操作商品');
+
+  var id = payload.id != null ? parseInt(payload.id, 10) : 0;
+  var categoryId = parseInt(payload.category_id, 10);
+  var name = payload.name != null ? String(payload.name).trim() : '';
+  var unitPrice = payload.unit_price != null ? parseFloat(payload.unit_price) : NaN;
+  var sortOrder = payload.sort_order != null ? parseInt(payload.sort_order, 10) : 0;
+  if (!categoryId || categoryId <= 0) return fail(400, '请选择分类');
+  if (!name || name.length > 64) return fail(400, '请填写 1～64 字商品名称');
+  if (Number.isNaN(unitPrice) || unitPrice < 0 || unitPrice > MAX_CASH) return fail(400, '商品价格不正确');
+  if (Number.isNaN(sortOrder)) sortOrder = 0;
+
+  var catQ = await db.collection('product_categories').where({ store_id: storeId, id: categoryId }).limit(1).get();
+  if (!catQ.data.length || catQ.data[0].is_deleted === 1) return fail(400, '分类不存在');
+  if (catQ.data[0].is_active === 0) return fail(400, '分类已停用，请先恢复分类');
+  var st = await getStoreById(storeId);
+  if (!st) return fail(404, '门店不存在');
+
+  if (id > 0) {
+    var q = await db.collection('products').where({ store_id: storeId, id: id }).limit(1).get();
+    if (!q.data.length || q.data[0].is_deleted === 1) return fail(404, '商品不存在');
+    await db.collection('products').doc(q.data[0]._id).update({
+      data: {
+        category_id: categoryId,
+        name: name,
+        unit_price: unitPrice,
+        sort_order: sortOrder,
+        is_active: 1,
+        updated_at: db.serverDate(),
+      },
+    });
+    var after = await db.collection('products').doc(q.data[0]._id).get();
+    var cname = catQ.data[0].name || '';
+    return ok({ product: toPublicProduct(after.data, cname), current_stock: parseInt(st.current_stock, 10) || 0 }, '已保存');
+  }
+
+  var productId = await nextSeq('product');
+  var docId = 'prod_' + productId;
+  await db.collection('products').doc(docId).set({
+    data: {
+      id: productId,
+      store_id: storeId,
+      category_id: categoryId,
+      name: name,
+      unit_price: unitPrice,
+      current_stock: 0,
+      sort_order: sortOrder,
+      is_active: 1,
+      is_deleted: 0,
+      created_at: db.serverDate(),
+      updated_at: db.serverDate(),
+    },
+  });
+  var created = await db.collection('products').doc(docId).get();
+  return ok({ product: toPublicProduct(created.data, catQ.data[0].name || ''), current_stock: parseInt(st.current_stock, 10) || 0 }, '已添加');
+}
+
+async function handleProductDisable(openid, payload) {
+  var u = await requireUser(openid);
+  if (!u) return fail(401, '未登录或用户无效');
+  var ctx = await requireActiveStoreId(openid, u);
+  if (ctx.err) return ctx.err;
+  var role = await requireStoreMembership(u.userId, ctx.storeId);
+  if (role !== 1) return fail(403, '仅门店管理员可操作商品');
+  var id = parseInt(payload.id, 10);
+  if (!id || id <= 0) return fail(400, '缺少商品 id');
+  var q = await db.collection('products').where({ store_id: ctx.storeId, id: id }).limit(1).get();
+  if (!q.data.length) return fail(404, '商品不存在');
+  await db.collection('products').doc(q.data[0]._id).update({
+    data: { is_active: 0, updated_at: db.serverDate() },
+  });
+  return ok({ id: id }, '已停用');
+}
+
+async function handleProductDelete(openid, payload) {
+  var u = await requireUser(openid);
+  if (!u) return fail(401, '未登录或用户无效');
+  var ctx = await requireActiveStoreId(openid, u);
+  if (ctx.err) return ctx.err;
+  var storeId = ctx.storeId;
+  var role = await requireStoreMembership(u.userId, storeId);
+  if (role !== 1) return fail(403, '仅门店管理员可操作商品');
+  var id = parseInt(payload.id, 10);
+  if (!id || id <= 0) return fail(400, '缺少商品 id');
+  var q = await db.collection('products').where({ store_id: storeId, id: id }).limit(1).get();
+  if (!q.data.length) return fail(404, '商品不存在');
+  var product = q.data[0];
+  var nonZeroProduct = findNonZeroStockProduct([product]);
+  if (nonZeroProduct) return fail(400, nonZeroStockDeleteMessage(nonZeroProduct));
+  var soft = await productIsReferenced(id, storeId);
+  var st = await getStoreById(storeId);
+  if (!st) return fail(404, '门店不存在');
+  var currentStock = parseStockValue(st.current_stock);
+  if (soft) {
+    await db.collection('products').doc(product._id).update({
+      data: { is_active: 0, is_deleted: 1, updated_at: db.serverDate() },
+    });
+  } else {
+    await db.collection('products').doc(product._id).remove();
+  }
+  return ok({ id: id, soft_deleted: soft, current_stock: currentStock }, soft ? '已软删除' : '已删除');
 }
 
 async function handleStoreCreate(openid, payload) {
@@ -927,8 +1550,7 @@ async function handleGetRecords(openid, payload) {
     whereBase.record_month = month;
   }
 
-  var recSnap = await db.collection('shift_records').where(whereBase).limit(500).get();
-  var recordsRaw = recSnap.data;
+  var recordsRaw = await fetchAllByWhere('shift_records', whereBase);
 
   var summary = {
     total_revenue: 0,
@@ -941,20 +1563,73 @@ async function handleGetRecords(openid, payload) {
     total_alipay_amount: 0,
     total_cash_amount: 0,
     record_count: recordsRaw.length,
+    product_summaries: [],
   };
+  if (!recordsRaw.length) {
+    return ok(
+      {
+        filter: { type: filterType, value: filterValue },
+        summary: summary,
+        records: [],
+      },
+      'success'
+    );
+  }
+
+  var productSummaryMap = {};
+  var itemsByRecordId = {};
+  var legacyFallbackProduct;
+  for (var legacyCheck = 0; legacyCheck < recordsRaw.length; legacyCheck++) {
+    if (!Array.isArray(recordsRaw[legacyCheck].items) || !recordsRaw[legacyCheck].items.length) {
+      legacyFallbackProduct = await getDefaultProduct(storeId);
+      break;
+    }
+  }
   for (var i = 0; i < recordsRaw.length; i++) {
     var sr = recordsRaw[i];
+    var srItems = await normalizeRecordItemsFromRow(sr, storeId, legacyFallbackProduct);
+    itemsByRecordId[sr.id] = srItems;
     summary.total_revenue += parseFloat(sr.total_revenue) || 0;
     summary.total_sold += parseInt(sr.qty_sold, 10) || 0;
     summary.total_gift += parseInt(sr.qty_gift, 10) || 0;
     summary.total_wechat_qty += parseInt(sr.sold_wechat, 10) || 0;
     summary.total_alipay_qty += parseInt(sr.sold_alipay, 10) || 0;
     summary.total_cash_qty += parseInt(sr.sold_cash, 10) || 0;
-    var up = parseFloat(sr.unit_price) || 0;
-    summary.total_wechat_amount += (parseInt(sr.sold_wechat, 10) || 0) * up;
-    summary.total_alipay_amount += (parseInt(sr.sold_alipay, 10) || 0) * up;
-    summary.total_cash_amount += (parseInt(sr.sold_cash, 10) || 0) * up;
+    for (var psi = 0; psi < srItems.length; psi++) {
+      var it = srItems[psi];
+      summary.total_wechat_amount += it.sold_wechat * it.unit_price;
+      summary.total_alipay_amount += it.sold_alipay * it.unit_price;
+      summary.total_cash_amount += it.sold_cash * it.unit_price;
+      var key = String(it.product_id || 0);
+      if (!productSummaryMap[key]) {
+        productSummaryMap[key] = {
+          product_id: it.product_id,
+          product_name: it.product_name,
+          category_id: it.category_id,
+          category_name: it.category_name,
+          total_revenue: 0,
+          total_sold: 0,
+          total_gift: 0,
+          total_wechat_qty: 0,
+          total_alipay_qty: 0,
+          total_cash_qty: 0,
+        };
+      }
+      productSummaryMap[key].total_revenue += it.total_revenue;
+      productSummaryMap[key].total_sold += it.qty_sold;
+      productSummaryMap[key].total_gift += it.qty_gift;
+      productSummaryMap[key].total_wechat_qty += it.sold_wechat;
+      productSummaryMap[key].total_alipay_qty += it.sold_alipay;
+      productSummaryMap[key].total_cash_qty += it.sold_cash;
+    }
   }
+  summary.product_summaries = Object.keys(productSummaryMap)
+    .map(function (key) {
+      var row = productSummaryMap[key];
+      row.total_revenue = Math.round(row.total_revenue * 100) / 100;
+      return row;
+    })
+    .sort(function (a, b) { return a.product_id - b.product_id; });
 
   var cfgSnap = await db
     .collection('shift_configs')
@@ -987,6 +1662,7 @@ async function handleGetRecords(openid, payload) {
   var records = [];
   for (var j = 0; j < recordsRaw.length; j++) {
     var row = recordsRaw[j];
+    var rowItems = itemsByRecordId[row.id] || [];
     var sc = cfgMap[row.shift_config_id] || {};
     var nick = nickMap[row.recorder_id] || '';
     var disp = row.recorder_name != null && String(row.recorder_name).trim() ? String(row.recorder_name).trim() : nick;
@@ -1000,6 +1676,7 @@ async function handleGetRecords(openid, payload) {
       shift_icon: sc.icon || '',
       recorder_id: row.recorder_id,
       recorder_name: disp || '—',
+      items: rowItems,
       qty_opening: row.qty_opening,
       qty_closing: row.qty_closing,
       qty_gift: row.qty_gift,
@@ -1061,17 +1738,8 @@ async function handleAddRecord(openid, payload) {
 
   var recordDate = payload.record_date ? String(payload.record_date).trim() : '';
   var shiftConfigId = parseInt(payload.shift_config_id, 10);
-  var qtyOpening = parseNonNegInt(payload.qty_opening, MAX_QTY);
-  var qtyClosing = parseNonNegInt(payload.qty_closing, MAX_QTY);
-  var qtyGift = parseNonNegInt(payload.qty_gift, MAX_QTY);
-  var soldWechat = parseNonNegInt(payload.sold_wechat, MAX_QTY);
-  var soldAlipay = parseNonNegInt(payload.sold_alipay, MAX_QTY);
-  var soldCash = parseNonNegInt(payload.sold_cash, MAX_QTY);
   var cashOpening = parseNonNegFloat(payload.cash_opening, MAX_CASH);
   var cashClosing = parseNonNegFloat(payload.cash_closing, MAX_CASH);
-  if ([qtyOpening, qtyClosing, qtyGift, soldWechat, soldAlipay, soldCash].indexOf(null) !== -1) {
-    return fail(400, '件数须为非负整数且不能超过上限');
-  }
   if (cashOpening === null || cashClosing === null) {
     return fail(400, '现金金额须为非负数且不能超过上限');
   }
@@ -1102,29 +1770,25 @@ async function handleAddRecord(openid, payload) {
     return fail(400, '记账姓名不在本店名单中，请在录入页重新选择或联系管理员维护名单');
   }
 
-  var qtySold = qtyOpening - qtyClosing - qtyGift;
-  if (qtySold < 0) qtySold = 0;
-  var paymentQty = soldWechat + soldAlipay + soldCash;
-  if (paymentQty < 0) paymentQty = 0;
-  var unitPrice = ITEM_UNIT_PRICE_JPY;
-  var totalRevenue = Math.round(unitPrice * paymentQty * 100) / 100;
+  var built = await buildRecordItemsFromPayload(payload, storeId, null, true);
+  if (built.err) return built.err;
+  var items = built.items;
+  var sum = built.summary;
   var recordMonth = monthFromDateStr(recordDate);
-
-  /**
-   * 与库存管理 current_stock 对齐：
-   * - 支付渠道售出 + 赠送；若未填支付但填了盘点，则用 max(盘点售出, 支付合计)+赠送，避免只填上班/下班时不扣库。
-   */
-  var stockBase = Math.max(qtySold, paymentQty);
-  var stockDeduct = stockBase + qtyGift;
-  if (stockDeduct < 0) stockDeduct = 0;
-  var cashDelta = soldCash * unitPrice;
+  var cashDelta = 0;
+  for (var ci = 0; ci < items.length; ci++) {
+    cashDelta += items[ci].sold_cash * items[ci].unit_price;
+  }
+  cashDelta = Math.round(cashDelta * 100) / 100;
 
   /** 预分配业务 id（nextSeq 自身事务，不与下面外层事务嵌套） */
   var recordId = await nextSeq('shift_record');
   /** 宽松模式：允许同 (店/日/班) 多次录入，文档 _id 仅按业务 id 保证唯一 */
   var shiftRecDocId = 'sr_' + recordId;
-  var needLedger = stockDeduct > 0 || cashDelta !== 0;
+  var stockByProduct = stockMapFromItems(items);
+  var needLedger = sum.stock_deduct > 0 || cashDelta !== 0;
   var ledgerId = needLedger ? await nextSeq('stock_ledger') : null;
+  var productDocs = productDocIds(built.catalog);
 
   var txResult;
   try {
@@ -1136,9 +1800,41 @@ async function handleAddRecord(openid, payload) {
         throw e2;
       }
       var live = stSnap.data;
-      var liveStock = live.current_stock != null ? live.current_stock : 0;
-      var liveCash = live.current_cash != null ? live.current_cash : 0;
-      var nextStockTx = liveStock - stockDeduct;
+      var liveStock = parseStockValue(live.current_stock);
+      var liveCash = parseFloat(live.current_cash) || 0;
+      var actualStockDelta = 0;
+      var productIds = Object.keys(stockByProduct);
+      var liveProductStocks = {};
+      var liveProductNames = {};
+      for (var pi = 0; pi < productIds.length; pi++) {
+        var pid = parseInt(productIds[pi], 10);
+        var deduct = stockByProduct[pid] || 0;
+        if (!deduct) continue;
+        var pDocId = productDocs[pid];
+        if (!pDocId) continue;
+        var pSnap = await tx.collection('products').doc(pDocId).get();
+        var pData = pSnap && pSnap.data ? pSnap.data : null;
+        liveProductStocks[pid] = pData ? parseStockValue(pData.current_stock) : 0;
+        liveProductNames[pid] = pData && pData.name ? pData.name : (built.catalog.productMap[pid] && built.catalog.productMap[pid].name) || '';
+      }
+      var addStockIssue = findInsufficientStockDeduct(stockByProduct, liveProductStocks, liveProductNames);
+      if (addStockIssue) {
+        throw userError(400, stockInsufficientMessage(addStockIssue));
+      }
+      for (var psi = 0; psi < productIds.length; psi++) {
+        var updatePid = parseInt(productIds[psi], 10);
+        var updateDeduct = stockByProduct[updatePid] || 0;
+        if (!updateDeduct) continue;
+        var updateDocId = productDocs[updatePid];
+        if (!updateDocId) continue;
+        var pLive = liveProductStocks[updatePid] || 0;
+        var pNext = pLive - updateDeduct;
+        actualStockDelta += pNext - pLive;
+        await tx.collection('products').doc(updateDocId).update({
+          data: { current_stock: pNext, updated_at: db.serverDate() },
+        });
+      }
+      var nextStockTx = liveStock + actualStockDelta;
       if (nextStockTx < 0) nextStockTx = 0;
       var nextCashTx = liveCash + cashDelta;
 
@@ -1151,18 +1847,19 @@ async function handleAddRecord(openid, payload) {
           recorder_name: recName,
           record_date: recordDate,
           record_month: recordMonth,
-          qty_opening: qtyOpening,
-          qty_closing: qtyClosing,
-          qty_gift: qtyGift,
-          sold_wechat: soldWechat,
-          sold_alipay: soldAlipay,
-          sold_cash: soldCash,
+          items: items,
+          qty_opening: sum.qty_opening,
+          qty_closing: sum.qty_closing,
+          qty_gift: sum.qty_gift,
+          sold_wechat: sum.sold_wechat,
+          sold_alipay: sum.sold_alipay,
+          sold_cash: sum.sold_cash,
           cash_opening: cashOpening,
           cash_closing: cashClosing,
-          qty_sold: qtySold,
-          total_revenue: totalRevenue,
-          unit_price: unitPrice,
-          stock_deduct: stockDeduct,
+          qty_sold: sum.qty_sold,
+          total_revenue: sum.total_revenue,
+          unit_price: sum.unit_price,
+          stock_deduct: sum.stock_deduct,
           created_at: db.serverDate(),
           updated_at: db.serverDate(),
         },
@@ -1182,7 +1879,7 @@ async function handleAddRecord(openid, payload) {
           storeId,
           u.userId,
           'record_add',
-          -stockDeduct,
+          actualStockDelta,
           nextStockTx,
           cashDelta,
           nextCashTx,
@@ -1206,18 +1903,19 @@ async function handleAddRecord(openid, payload) {
       shift_config_id: shiftConfigId,
       recorder: recName,
       record_date: recordDate,
-      qty_opening: qtyOpening,
-      qty_closing: qtyClosing,
-      qty_gift: qtyGift,
-      qty_sold: qtySold,
-      sold_wechat: soldWechat,
-      sold_alipay: soldAlipay,
-      sold_cash: soldCash,
+      items: items,
+      qty_opening: sum.qty_opening,
+      qty_closing: sum.qty_closing,
+      qty_gift: sum.qty_gift,
+      qty_sold: sum.qty_sold,
+      sold_wechat: sum.sold_wechat,
+      sold_alipay: sum.sold_alipay,
+      sold_cash: sum.sold_cash,
       cash_opening: cashOpening,
       cash_closing: cashClosing,
-      unit_price: unitPrice,
-      total_revenue: totalRevenue,
-      stock_deduct: stockDeduct,
+      unit_price: sum.unit_price,
+      total_revenue: sum.total_revenue,
+      stock_deduct: sum.stock_deduct,
       current_stock: txResult.nextStock,
       current_cash: txResult.nextCash,
     },
@@ -1357,6 +2055,7 @@ async function handleOpsAction(openid, payload) {
   if (role !== 1) return fail(403, '仅门店管理员可执行此操作');
 
   var actionType = payload.action_type; // 'restock' | 'withdraw' | 'adjust_stock' | 'adjust_cash'
+  var productId = payload.product_id != null ? parseInt(payload.product_id, 10) : 0;
   var valStock = parseNonNegInt(payload.val_stock, MAX_QTY);
   var valCash = parseNonNegFloat(payload.val_cash, MAX_CASH);
   if (valStock === null) return fail(400, '库存数值须为非负整数且不能超过上限');
@@ -1374,6 +2073,18 @@ async function handleOpsAction(openid, payload) {
   }
   if (actionType === 'restock' && valStock <= 0) return fail(400, '补货数量须大于 0');
   if (actionType === 'withdraw' && valCash <= 0) return fail(400, '取现金额须大于 0');
+  var product = null;
+  var productDocId = '';
+  if (actionType === 'restock' || actionType === 'adjust_stock') {
+    if (!productId || productId <= 0) {
+      var fallback = await getDefaultProduct(storeId);
+      productId = fallback ? fallback.id : 0;
+    }
+    var pQ = await db.collection('products').where({ store_id: storeId, id: productId }).limit(1).get();
+    if (!pQ.data.length || pQ.data[0].is_deleted === 1) return fail(400, '请选择有效商品');
+    product = pQ.data[0];
+    productDocId = product._id;
+  }
 
   var ledgerId = await nextSeq('stock_ledger');
 
@@ -1386,8 +2097,13 @@ async function handleOpsAction(openid, payload) {
         miss._user = { code: 404, msg: '门店不存在' };
         throw miss;
       }
-      var liveStock = stSnap.data.current_stock != null ? stSnap.data.current_stock : 0;
-      var liveCash = stSnap.data.current_cash != null ? stSnap.data.current_cash : 0;
+      var liveStock = parseStockValue(stSnap.data.current_stock);
+      var liveCash = parseFloat(stSnap.data.current_cash) || 0;
+      var liveProductStock = 0;
+      if (productDocId) {
+        var pSnap = await tx.collection('products').doc(productDocId).get();
+        liveProductStock = pSnap && pSnap.data ? parseInt(pSnap.data.current_stock, 10) || 0 : 0;
+      }
 
       var nextStock = liveStock;
       var nextCash = liveCash;
@@ -1411,8 +2127,9 @@ async function handleOpsAction(openid, payload) {
         nextCash = liveCash + deltaCash;
         defaultNote = '取现 -' + valCash;
       } else if (actionType === 'adjust_stock') {
-        deltaStock = valStock - liveStock;
-        nextStock = valStock;
+        deltaStock = valStock - liveProductStock;
+        nextStock = liveStock + deltaStock;
+        if (nextStock < 0) nextStock = 0;
         defaultNote = '库存校准';
         if (deltaStock === 0) {
           return { nextStock: liveStock, nextCash: liveCash, deltaStock: 0, deltaCash: 0, skipped: true };
@@ -1426,6 +2143,13 @@ async function handleOpsAction(openid, payload) {
         }
       }
 
+      if (productDocId && deltaStock !== 0) {
+        var nextProductStock = liveProductStock + deltaStock;
+        if (nextProductStock < 0) nextProductStock = 0;
+        await tx.collection('products').doc(productDocId).update({
+          data: { current_stock: nextProductStock, updated_at: db.serverDate() },
+        });
+      }
       await tx.collection('stores').doc(storeDbId).update({
         data: {
           current_stock: nextStock,
@@ -1444,7 +2168,9 @@ async function handleOpsAction(openid, payload) {
         deltaCash,
         nextCash,
         null,
-        note || defaultNote
+        note || defaultNote,
+        productId,
+        product ? product.name : ''
       );
 
       return { nextStock: nextStock, nextCash: nextCash, deltaStock: deltaStock, deltaCash: deltaCash, skipped: false };
@@ -1587,6 +2313,8 @@ async function handleStockLedgerList(openid, payload) {
       balance_after: row.balance_after != null ? row.balance_after : 0,
       cash_delta: row.cash_delta || 0,
       cash_balance_after: row.cash_balance_after != null ? row.cash_balance_after : 0,
+      product_id: row.product_id != null ? row.product_id : null,
+      product_name: row.product_name || '',
       ref_record_id: row.ref_record_id != null ? row.ref_record_id : null,
       note: row.note || '',
       time_display: formatLedgerEntryTime(row.created_at),
@@ -1613,10 +2341,19 @@ async function handleStockAdjust(openid, payload) {
     return fail(400, '实盘库存须为非负整数且不能超过上限');
   }
   var noteIn = payload && payload.note != null ? String(payload.note).trim().slice(0, 200) : '';
+  var productId = payload && payload.product_id != null ? parseInt(payload.product_id, 10) : 0;
 
   var stQ = await db.collection('stores').where({ id: storeId }).limit(1).get();
   if (!stQ.data.length) return fail(404, '门店不存在');
   var storeDbId = stQ.data[0]._id;
+  if (!productId || productId <= 0) {
+    var fallback = await getDefaultProduct(storeId);
+    productId = fallback ? fallback.id : 0;
+  }
+  var pQ = await db.collection('products').where({ store_id: storeId, id: productId }).limit(1).get();
+  if (!pQ.data.length || pQ.data[0].is_deleted === 1) return fail(400, '请选择有效商品');
+  var product = pQ.data[0];
+  var productDocId = product._id;
 
   var ledgerId = await nextSeq('stock_ledger');
   var noteOut = noteIn || '库存校准';
@@ -1630,14 +2367,22 @@ async function handleStockAdjust(openid, payload) {
         miss._user = { code: 404, msg: '门店不存在' };
         throw miss;
       }
-      var cur = snap.data.current_stock != null ? snap.data.current_stock : 0;
-      var curCashForLedger = snap.data.current_cash != null ? snap.data.current_cash : 0;
-      var delta = target - cur;
+      var currentBalance = nextStoreBalance(snap.data.current_stock, snap.data.current_cash, 0, 0);
+      var cur = currentBalance.current_stock;
+      var curCashForLedger = currentBalance.current_cash;
+      var pSnap = await tx.collection('products').doc(productDocId).get();
+      var productCur = pSnap && pSnap.data ? parseStockValue(pSnap.data.current_stock) : 0;
+      var delta = target - productCur;
       if (delta === 0) {
         return { skipped: true, current_stock: cur, delta: 0 };
       }
-      await tx.collection('stores').doc(storeDbId).update({
+      var nextBalance = nextStoreBalance(cur, curCashForLedger, delta, 0);
+      var nextStoreStock = nextBalance.current_stock;
+      await tx.collection('products').doc(productDocId).update({
         data: { current_stock: target, updated_at: db.serverDate() },
+      });
+      await tx.collection('stores').doc(storeDbId).update({
+        data: { current_stock: nextStoreStock, updated_at: db.serverDate() },
       });
       await insertStockLedgerEntryTx(
         tx,
@@ -1646,13 +2391,15 @@ async function handleStockAdjust(openid, payload) {
         u.userId,
         'adjust_stock',
         delta,
-        target,
+        nextStoreStock,
         0,
         curCashForLedger,
         null,
-        noteOut
+        noteOut,
+        productId,
+        product.name || ''
       );
-      return { skipped: false, current_stock: target, delta: delta };
+      return { skipped: false, current_stock: nextStoreStock, delta: delta };
     });
   } catch (err) {
     if (err && err._user) return fail(err._user.code, err._user.msg);
@@ -1727,6 +2474,7 @@ async function mapShiftRecordRow(row, storeId) {
     if (uu.data.length) nick = uu.data[0].nickname || '';
   }
   var sc = cfgMap[row.shift_config_id] || {};
+  var items = await normalizeRecordItemsFromRow(row, storeId);
   var disp =
     row.recorder_name != null && String(row.recorder_name).trim()
       ? String(row.recorder_name).trim()
@@ -1741,6 +2489,7 @@ async function mapShiftRecordRow(row, storeId) {
     shift_icon: sc.icon || '',
     recorder_id: row.recorder_id,
     recorder_name: disp || '—',
+    items: items,
     qty_opening: row.qty_opening,
     qty_closing: row.qty_closing,
     qty_gift: row.qty_gift,
@@ -1795,17 +2544,8 @@ async function handleUpdateRecord(openid, payload) {
 
   var recordDate = payload.record_date ? String(payload.record_date).trim() : '';
   var shiftConfigId = parseInt(payload.shift_config_id, 10);
-  var qtyOpening = parseNonNegInt(payload.qty_opening, MAX_QTY);
-  var qtyClosing = parseNonNegInt(payload.qty_closing, MAX_QTY);
-  var qtyGift = parseNonNegInt(payload.qty_gift, MAX_QTY);
-  var soldWechat = parseNonNegInt(payload.sold_wechat, MAX_QTY);
-  var soldAlipay = parseNonNegInt(payload.sold_alipay, MAX_QTY);
-  var soldCash = parseNonNegInt(payload.sold_cash, MAX_QTY);
   var cashOpening = parseNonNegFloat(payload.cash_opening, MAX_CASH);
   var cashClosing = parseNonNegFloat(payload.cash_closing, MAX_CASH);
-  if ([qtyOpening, qtyClosing, qtyGift, soldWechat, soldAlipay, soldCash].indexOf(null) !== -1) {
-    return fail(400, '件数须为非负整数且不能超过上限');
-  }
   if (cashOpening === null || cashClosing === null) {
     return fail(400, '现金金额须为非负数且不能超过上限');
   }
@@ -1835,44 +2575,39 @@ async function handleUpdateRecord(openid, payload) {
     return fail(400, '记账姓名不在本店名单中');
   }
 
-  var qtySold = qtyOpening - qtyClosing - qtyGift;
-  if (qtySold < 0) qtySold = 0;
-  var paymentQty = soldWechat + soldAlipay + soldCash;
-  if (paymentQty < 0) paymentQty = 0;
-  /**
-   * 修改记录时使用原记录的 unit_price：
-   * - 不因后续单价调整而让历史记录「金额被重估」
-   * - 保证 oldCashDelta 与 newCashDelta 使用同一单价，对 current_cash 的增减自洽
-   */
-  var unitPrice = (oldRow.unit_price != null && !Number.isNaN(parseFloat(oldRow.unit_price)))
-    ? parseFloat(oldRow.unit_price)
-    : ITEM_UNIT_PRICE_JPY;
-  var totalRevenue = Math.round(unitPrice * paymentQty * 100) / 100;
+  var oldItems = await normalizeRecordItemsFromRow(oldRow, storeId);
+  var built = await buildRecordItemsFromPayload(payload, storeId, oldItems, false);
+  if (built.err) return built.err;
+  var items = built.items;
+  var sum = built.summary;
   var recordMonth = monthFromDateStr(recordDate);
-
-  var oldDeduct = stockDeductFromQtys(
-    oldRow.qty_opening,
-    oldRow.qty_closing,
-    oldRow.qty_gift,
-    oldRow.sold_wechat,
-    oldRow.sold_alipay,
-    oldRow.sold_cash
-  );
-  var newDeduct = stockDeductFromQtys(
-    qtyOpening,
-    qtyClosing,
-    qtyGift,
-    soldWechat,
-    soldAlipay,
-    soldCash
-  );
-  var oldCashDelta = (oldRow.sold_cash || 0) * unitPrice;
-  var newCashDelta = soldCash * unitPrice;
-  var stockDelta = oldDeduct - newDeduct;
+  var oldStockMap = stockMapFromItems(oldItems);
+  var newStockMap = stockMapFromItems(items);
+  var oldCashDelta = 0;
+  var newCashDelta = 0;
+  for (var oci = 0; oci < oldItems.length; oci++) oldCashDelta += oldItems[oci].sold_cash * oldItems[oci].unit_price;
+  for (var nci = 0; nci < items.length; nci++) newCashDelta += items[nci].sold_cash * items[nci].unit_price;
+  oldCashDelta = Math.round(oldCashDelta * 100) / 100;
+  newCashDelta = Math.round(newCashDelta * 100) / 100;
   var cashDelta = newCashDelta - oldCashDelta;
-  var needLedger = stockDelta !== 0 || cashDelta !== 0;
+  var stockDeltaByProduct = {};
+  var allProductIds = {};
+  var oldKeys = Object.keys(oldStockMap);
+  var newKeys = Object.keys(newStockMap);
+  for (var okm = 0; okm < oldKeys.length; okm++) allProductIds[oldKeys[okm]] = true;
+  for (var nkm = 0; nkm < newKeys.length; nkm++) allProductIds[newKeys[nkm]] = true;
+  var totalRequestedStockDelta = 0;
+  var pidKeys = Object.keys(allProductIds);
+  for (var sdi = 0; sdi < pidKeys.length; sdi++) {
+    var pidKey = pidKeys[sdi];
+    var delta = (oldStockMap[pidKey] || 0) - (newStockMap[pidKey] || 0);
+    stockDeltaByProduct[pidKey] = delta;
+    totalRequestedStockDelta += delta;
+  }
+  var needLedger = totalRequestedStockDelta !== 0 || cashDelta !== 0;
 
   var ledgerId = needLedger ? await nextSeq('stock_ledger') : null;
+  var productDocs = productDocIds(built.catalog);
 
   var txResult;
   try {
@@ -1883,9 +2618,41 @@ async function handleUpdateRecord(openid, payload) {
         miss._user = { code: 500, msg: '门店信息不存在' };
         throw miss;
       }
-      var liveStock = stSnap.data.current_stock != null ? stSnap.data.current_stock : 0;
-      var liveCash = stSnap.data.current_cash != null ? stSnap.data.current_cash : 0;
-      var nextStock = liveStock + stockDelta;
+      var liveStock = parseStockValue(stSnap.data.current_stock);
+      var liveCash = parseFloat(stSnap.data.current_cash) || 0;
+      var actualStockDelta = 0;
+      var productIds = Object.keys(stockDeltaByProduct);
+      var liveProductStocks = {};
+      var liveProductNames = {};
+      for (var pi = 0; pi < productIds.length; pi++) {
+        var pid = parseInt(productIds[pi], 10);
+        var delta = stockDeltaByProduct[pid] || 0;
+        if (!delta) continue;
+        var pDocId = productDocs[pid];
+        if (!pDocId) continue;
+        var pSnap = await tx.collection('products').doc(pDocId).get();
+        var pData = pSnap && pSnap.data ? pSnap.data : null;
+        liveProductStocks[pid] = pData ? parseStockValue(pData.current_stock) : 0;
+        liveProductNames[pid] = pData && pData.name ? pData.name : (built.catalog.productMap[pid] && built.catalog.productMap[pid].name) || '';
+      }
+      var updateStockIssue = findInsufficientStockDelta(stockDeltaByProduct, liveProductStocks, liveProductNames);
+      if (updateStockIssue) {
+        throw userError(400, stockInsufficientMessage(updateStockIssue));
+      }
+      for (var psi = 0; psi < productIds.length; psi++) {
+        var updatePid = parseInt(productIds[psi], 10);
+        var updateDelta = stockDeltaByProduct[updatePid] || 0;
+        if (!updateDelta) continue;
+        var updateDocId = productDocs[updatePid];
+        if (!updateDocId) continue;
+        var pLive = liveProductStocks[updatePid] || 0;
+        var pNext = pLive + updateDelta;
+        actualStockDelta += pNext - pLive;
+        await tx.collection('products').doc(updateDocId).update({
+          data: { current_stock: pNext, updated_at: db.serverDate() },
+        });
+      }
+      var nextStock = liveStock + actualStockDelta;
       if (nextStock < 0) nextStock = 0;
       var nextCash = liveCash + cashDelta;
 
@@ -1895,18 +2662,19 @@ async function handleUpdateRecord(openid, payload) {
           recorder_name: recName,
           record_date: recordDate,
           record_month: recordMonth,
-          qty_opening: qtyOpening,
-          qty_closing: qtyClosing,
-          qty_gift: qtyGift,
-          sold_wechat: soldWechat,
-          sold_alipay: soldAlipay,
-          sold_cash: soldCash,
+          items: items,
+          qty_opening: sum.qty_opening,
+          qty_closing: sum.qty_closing,
+          qty_gift: sum.qty_gift,
+          sold_wechat: sum.sold_wechat,
+          sold_alipay: sum.sold_alipay,
+          sold_cash: sum.sold_cash,
           cash_opening: cashOpening,
           cash_closing: cashClosing,
-          qty_sold: qtySold,
-          total_revenue: totalRevenue,
-          unit_price: unitPrice,
-          stock_deduct: newDeduct,
+          qty_sold: sum.qty_sold,
+          total_revenue: sum.total_revenue,
+          unit_price: sum.unit_price,
+          stock_deduct: sum.stock_deduct,
           updated_at: db.serverDate(),
         },
       });
@@ -1921,7 +2689,7 @@ async function handleUpdateRecord(openid, payload) {
           storeId,
           u.userId,
           'record_update',
-          stockDelta,
+          actualStockDelta,
           nextStock,
           cashDelta,
           nextCash,
@@ -1942,7 +2710,8 @@ async function handleUpdateRecord(openid, payload) {
     {
       id: recordId,
       record_date: recordDate,
-      stock_deduct: newDeduct,
+      items: items,
+      stock_deduct: sum.stock_deduct,
       current_stock: txResult.nextStock,
       current_cash: txResult.nextCash,
     },
@@ -1967,26 +2736,23 @@ async function handleDeleteRecord(openid, payload) {
   var row = recSnap.data[0];
   var recDocId = row._id;
 
-  var oldDeduct = stockDeductFromQtys(
-    row.qty_opening,
-    row.qty_closing,
-    row.qty_gift,
-    row.sold_wechat,
-    row.sold_alipay,
-    row.sold_cash
-  );
-  var unitPrice = (row.unit_price != null && !Number.isNaN(parseFloat(row.unit_price)))
-    ? parseFloat(row.unit_price)
-    : ITEM_UNIT_PRICE_JPY;
-  var oldCashDelta = (row.sold_cash || 0) * unitPrice;
-  var stockDelta = oldDeduct;
+  var oldItems = await normalizeRecordItemsFromRow(row, storeId);
+  var oldStockMap = stockMapFromItems(oldItems);
+  var oldCashDelta = 0;
+  for (var oci = 0; oci < oldItems.length; oci++) oldCashDelta += oldItems[oci].sold_cash * oldItems[oci].unit_price;
+  oldCashDelta = Math.round(oldCashDelta * 100) / 100;
   var cashDelta = -oldCashDelta;
-  var needLedger = stockDelta !== 0 || cashDelta !== 0;
+  var totalRequestedStockDelta = 0;
+  var oldProductIds = Object.keys(oldStockMap);
+  for (var smi = 0; smi < oldProductIds.length; smi++) totalRequestedStockDelta += oldStockMap[oldProductIds[smi]] || 0;
+  var needLedger = totalRequestedStockDelta !== 0 || cashDelta !== 0;
   var ledgerId = needLedger ? await nextSeq('stock_ledger') : null;
 
   var stQ = await db.collection('stores').where({ id: storeId }).limit(1).get();
   if (!stQ.data.length) return fail(500, '门店信息不存在');
   var storeDbId = stQ.data[0]._id;
+  var catalog = await fetchProductCatalog(storeId);
+  var productDocs = productDocIds(catalog);
 
   var txResult;
   try {
@@ -1997,10 +2763,28 @@ async function handleDeleteRecord(openid, payload) {
         miss._user = { code: 500, msg: '门店信息不存在' };
         throw miss;
       }
-      var liveStock = stSnap.data.current_stock != null ? stSnap.data.current_stock : 0;
-      var liveCash = stSnap.data.current_cash != null ? stSnap.data.current_cash : 0;
-      var nextStock = liveStock + stockDelta;
-      var nextCash = liveCash + cashDelta;
+      var currentBalance = nextStoreBalance(stSnap.data.current_stock, stSnap.data.current_cash, 0, 0);
+      var liveStock = currentBalance.current_stock;
+      var liveCash = currentBalance.current_cash;
+      var actualStockDelta = 0;
+      var productIds = Object.keys(oldStockMap);
+      for (var pi = 0; pi < productIds.length; pi++) {
+        var pid = parseInt(productIds[pi], 10);
+        var delta = oldStockMap[pid] || 0;
+        if (!delta) continue;
+        var pDocId = productDocs[pid];
+        if (!pDocId) continue;
+        var pSnap = await tx.collection('products').doc(pDocId).get();
+        var pLive = pSnap && pSnap.data ? parseStockValue(pSnap.data.current_stock) : 0;
+        var pNext = pLive + delta;
+        actualStockDelta += pNext - pLive;
+        await tx.collection('products').doc(pDocId).update({
+          data: { current_stock: pNext, updated_at: db.serverDate() },
+        });
+      }
+      var nextBalance = nextStoreBalance(liveStock, liveCash, actualStockDelta, cashDelta);
+      var nextStock = nextBalance.current_stock;
+      var nextCash = nextBalance.current_cash;
 
       await tx.collection('shift_records').doc(recDocId).remove();
 
@@ -2014,7 +2798,7 @@ async function handleDeleteRecord(openid, payload) {
           storeId,
           u.userId,
           'record_delete',
-          stockDelta,
+          actualStockDelta,
           nextStock,
           cashDelta,
           nextCash,
@@ -2138,6 +2922,13 @@ exports.main = async function (event, context) {
       delete_record: 'deleteRecord',
       store_member_remove: 'storeMemberRemove',
       store_member_set_role: 'storeMemberSetRole',
+      product_catalog_list: 'productCatalogList',
+      product_category_save: 'productCategorySave',
+      product_category_disable: 'productCategoryDisable',
+      product_category_delete: 'productCategoryDelete',
+      product_save: 'productSave',
+      product_disable: 'productDisable',
+      product_delete: 'productDelete',
     };
     if (ACTION_ALIASES[action]) {
       action = ACTION_ALIASES[action];
@@ -2163,6 +2954,20 @@ exports.main = async function (event, context) {
         return await handleStoreUpdate(OPENID, payload);
       case 'storeDelete':
         return await handleStoreDelete(OPENID, payload);
+      case 'productCatalogList':
+        return await handleProductCatalogList(OPENID);
+      case 'productCategorySave':
+        return await handleProductCategorySave(OPENID, payload);
+      case 'productCategoryDisable':
+        return await handleProductCategoryDisable(OPENID, payload);
+      case 'productCategoryDelete':
+        return await handleProductCategoryDelete(OPENID, payload);
+      case 'productSave':
+        return await handleProductSave(OPENID, payload);
+      case 'productDisable':
+        return await handleProductDisable(OPENID, payload);
+      case 'productDelete':
+        return await handleProductDelete(OPENID, payload);
       case 'getShifts':
         return await handleGetShifts(OPENID);
       case 'shiftConfigSave':
