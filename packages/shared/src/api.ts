@@ -1,5 +1,8 @@
 import type {
   LedgerEntry,
+  Product,
+  ProductCategory,
+  RecordItem,
   Role,
   ShiftConfig,
   ShiftRecord,
@@ -185,6 +188,20 @@ export interface RecordsSummary {
   total_alipay_amount: number
   total_cash_amount: number
   record_count: number
+  product_summaries: ProductSummary[]
+}
+
+export interface ProductSummary {
+  product_id: number
+  product_name: string
+  category_id: number
+  category_name: string
+  total_revenue: number
+  total_sold: number
+  total_gift: number
+  total_wechat_qty: number
+  total_alipay_qty: number
+  total_cash_qty: number
 }
 
 export interface GetRecordsRes {
@@ -206,6 +223,7 @@ export interface AddRecordReq extends SessionHeader {
   record_date: string
   shift_config_id: number
   recorder_name: string
+  items?: RecordItemInput[]
   qty_opening: number
   qty_closing: number
   qty_gift?: number
@@ -217,11 +235,26 @@ export interface AddRecordReq extends SessionHeader {
   note?: string
 }
 export interface AddRecordRes {
-  record: ShiftRecord
+  id: number
+  store_id: number
+  shift_config_id: number
+  recorder: string
+  record_date: string
+  items: RecordItem[]
+  qty_opening: number
+  qty_closing: number
+  qty_gift: number
+  qty_sold: number
+  sold_wechat: number
+  sold_alipay: number
+  sold_cash: number
+  cash_opening: number
+  cash_closing: number
+  unit_price: number
+  total_revenue: number
+  stock_deduct: number
   current_stock: number
   current_cash: number
-  /** 与 current_stock 对应：本次实际扣减的库存 */
-  stock_deduct?: number
 }
 
 /** updateRecord */
@@ -235,6 +268,7 @@ export interface UpdateRecordReq extends SessionHeader {
   record_date: string
   shift_config_id: number
   recorder_name: string
+  items?: RecordItemInput[]
   qty_opening: number
   qty_closing: number
   qty_gift: number
@@ -246,9 +280,22 @@ export interface UpdateRecordReq extends SessionHeader {
   note?: string
 }
 export interface UpdateRecordRes {
-  record: ShiftRecord
+  id: number
+  record_date: string
+  items: RecordItem[]
+  stock_deduct: number
   current_stock: number
   current_cash: number
+}
+
+export interface RecordItemInput {
+  product_id: number
+  qty_opening: number
+  qty_closing: number
+  qty_gift?: number
+  sold_wechat?: number
+  sold_alipay?: number
+  sold_cash?: number
 }
 
 /** deleteRecord：仅管理员可删除；删除后会回滚库存/现金并记流水 */
@@ -326,6 +373,7 @@ export interface StockLedgerListRes {
 
 /** stockAdjust：仅校准库存（现金校准走 opsAction adjust_cash） */
 export interface StockAdjustReq extends SessionHeader {
+  product_id?: number
   /** 调整后的最终库存值（非差值） */
   target_stock: number
   note?: string
@@ -340,6 +388,8 @@ export type OpsActionType = 'restock' | 'withdraw' | 'adjust_stock' | 'adjust_ca
 
 export interface OpsActionReq extends SessionHeader {
   action_type: OpsActionType
+  /** restock / adjust_stock 必填；缺省时服务端兼容映射到默认商品 */
+  product_id?: number
   /** restock: 新增件数；adjust_stock: 目标库存件数；其余忽略 */
   val_stock?: number | string
   /** withdraw: 取现金额；adjust_cash: 目标现金值；其余忽略 */
@@ -350,6 +400,67 @@ export interface OpsActionRes {
   current_stock: number
   current_cash: number
   skipped?: boolean
+}
+
+/** productCatalogList */
+export type ProductCatalogListReq = SessionHeader
+export interface ProductCatalogListRes {
+  categories: ProductCategory[]
+  products: Product[]
+}
+
+/** productCategorySave */
+export interface ProductCategorySaveReq extends SessionHeader {
+  id?: number
+  name: string
+  sort_order?: number
+}
+export interface ProductCategorySaveRes {
+  category: ProductCategory
+}
+
+/** productCategoryDisable */
+export interface ProductCategoryDisableReq extends SessionHeader {
+  id: number
+}
+export interface ProductCategoryDisableRes {
+  id: number
+}
+
+/** productCategoryDelete */
+export type ProductCategoryDeleteReq = ProductCategoryDisableReq
+export interface ProductCategoryDeleteRes {
+  id: number
+  soft_deleted: boolean
+}
+
+/** productSave */
+export interface ProductSaveReq extends SessionHeader {
+  id?: number
+  category_id: number
+  name: string
+  unit_price: number
+  sort_order?: number
+}
+export interface ProductSaveRes {
+  product: Product
+  current_stock: number
+}
+
+/** productDisable */
+export interface ProductDisableReq extends SessionHeader {
+  id: number
+}
+export interface ProductDisableRes {
+  id: number
+}
+
+/** productDelete */
+export type ProductDeleteReq = ProductDisableReq
+export interface ProductDeleteRes {
+  id: number
+  soft_deleted: boolean
+  current_stock: number
 }
 
 /* ----------------------- Contract 映射 ----------------------- */
@@ -385,6 +496,13 @@ export interface Contract {
   stockLedgerList: { req: StockLedgerListReq; res: StockLedgerListRes }
   stockAdjust: { req: StockAdjustReq; res: StockAdjustRes }
   opsAction: { req: OpsActionReq; res: OpsActionRes }
+  productCatalogList: { req: ProductCatalogListReq; res: ProductCatalogListRes }
+  productCategorySave: { req: ProductCategorySaveReq; res: ProductCategorySaveRes }
+  productCategoryDisable: { req: ProductCategoryDisableReq; res: ProductCategoryDisableRes }
+  productCategoryDelete: { req: ProductCategoryDeleteReq; res: ProductCategoryDeleteRes }
+  productSave: { req: ProductSaveReq; res: ProductSaveRes }
+  productDisable: { req: ProductDisableReq; res: ProductDisableRes }
+  productDelete: { req: ProductDeleteReq; res: ProductDeleteRes }
 }
 
 export type ActionName = keyof Contract

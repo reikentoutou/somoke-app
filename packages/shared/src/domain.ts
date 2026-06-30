@@ -18,6 +18,32 @@ export interface Store {
   updated_at?: string
 }
 
+export interface ProductCategory {
+  id: number
+  store_id: number
+  name: string
+  sort_order: number
+  is_active: 0 | 1
+  is_deleted: 0 | 1
+  created_at?: string
+  updated_at?: string
+}
+
+export interface Product {
+  id: number
+  store_id: number
+  category_id: number
+  category_name: string
+  name: string
+  unit_price: number
+  current_stock: number
+  sort_order: number
+  is_active: 0 | 1
+  is_deleted: 0 | 1
+  created_at?: string
+  updated_at?: string
+}
+
 export interface StoreBrief {
   store_id: number
   name: string
@@ -72,9 +98,27 @@ export interface ShiftRecord {
   cash_closing: number
   unit_price: number
   total_revenue: number
+  items: RecordItem[]
   note?: string
   created_at?: string
   updated_at?: string
+}
+
+export interface RecordItem {
+  product_id: number
+  product_name: string
+  category_id: number
+  category_name: string
+  unit_price: number
+  qty_opening: number
+  qty_closing: number
+  qty_gift: number
+  qty_sold: number
+  sold_wechat: number
+  sold_alipay: number
+  sold_cash: number
+  total_revenue: number
+  stock_deduct: number
 }
 
 /** 运营流水事件类型（与云函数 store_stock_ledger.event_type 对齐） */
@@ -98,6 +142,8 @@ export interface LedgerEntry {
   balance_after: number
   cash_delta: number
   cash_balance_after: number
+  product_id?: number | null
+  product_name?: string
   ref_record_id?: number | null
   note?: string
   time_display?: string
